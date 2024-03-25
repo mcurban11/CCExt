@@ -5,7 +5,7 @@ This data repository goes with the paper entitled, "Climate Change Extinctions,"
 
 List of datasets:
 Metarisk for aggreg 5.txt - tab-delimited text file of raw data
-Metarisk2 aggregthres 5.txt - tab-delimited text file of data aggregated by extinction risk threshold  with Aggregate for beta.R
+Metarisk2 aggthres 5.txt - tab-delimited text file of data aggregated by extinction risk threshold  with Aggregate for beta.R
 
 List of R code:
 Aggregate for beta.R - Used to aggregate individual extinction thresholds for each study iteration into one aggregated estimate.
