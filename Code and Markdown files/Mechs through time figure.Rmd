@@ -1,0 +1,143 @@
+---
+title: "Mechanism figure: climate change extinctions"
+output: word_document
+date: "March 25th, 2024"
+---
+
+```{r, set up,  message = F}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE, cache = TRUE) 
+```
+## Load libraries and data
+<br>
+<br>
+```{r, load data and libraries, message = F}
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+library(ggplot2); library(dplyr); library(ggpubr)
+
+dataP<-read.table("Metarisk2 aggthres 5.txt",header=T);
+```
+## Number of mechanisms
+<br>
+<br>
+```{r, calculate quantities}
+dataP$any.mech <- rowSums(dataP[,20:25] == "Y")
+cat("maximum number of mechanisms in any study = ", max(dataP$any.mech))
+    
+mech.p.time <- dataP %>%
+  group_by(Study) %>%
+  summarize(Year = max(Year), mech.S = max(any.mech)) %>%
+  group_by(Year) %>%
+  #summarize(N.mech = sum(as.numeric(any.mech.2)), N.models = n(), P.mech = sum(as.numeric(any.mech.2))/n()) %>%
+  summarize(N.models = n(), 
+            N.mech.1 = sum(as.numeric(mech.S == 1)),
+            N.mech.2 = sum(as.numeric(mech.S == 2)),
+            N.mech.3 = sum(as.numeric(mech.S == 3)),
+            N.mech.4 = sum(as.numeric(mech.S == 4)),
+            N.mech.5 = sum(as.numeric(mech.S == 5))
+            ) %>%
+  #mutate(cum.mech = cumsum(N.mech), cum.N = cumsum(N.models), cum.P.mech = cum.mech/cum.N)
+  mutate(cum.N = cumsum(N.models), 
+         cum.N.1 = cumsum(N.mech.1),
+         cum.N.2 = cumsum(N.mech.2),
+         cum.N.3 = cumsum(N.mech.3),
+         cum.N.4 = cumsum(N.mech.4),
+         cum.N.5 = cumsum(N.mech.5),
+         cum.p.1 = cum.N.1/cum.N,
+         cum.p.2 = cum.N.2/cum.N,
+         cum.p.3 = cum.N.3/cum.N,
+         cum.p.4 = cum.N.4/cum.N,
+         cum.p.5 = cum.N.5/cum.N,
+         cum.p.6 = 1-(cum.N.1+cum.N.2+cum.N.3+cum.N.4+cum.N.5)/cum.N
+         )
+n.mechs = 6; # number of mechanisms
+n.times = nrow(mech.p.time)
+data.2.plot <- data.frame(Year = rep(mech.p.time$Year,n.mechs),Mechanisms = rep(c("1 mechanism","2 mechanisms","3 mechanisms", "4 mechanisms", "5 mechanisms","No mechanisms"),each = n.times), 
+                          Proportions = c(mech.p.time$cum.p.1,mech.p.time$cum.p.2,mech.p.time$cum.p.3,mech.p.time$cum.p.4,mech.p.time$cum.p.5,mech.p.time$cum.p.6))
+data.2.plot$Mechanisms <- factor(data.2.plot$Mechanisms, levels=c("No mechanisms","5 mechanisms","4 mechanisms", "3 mechanisms","2 mechanisms","1 mechanism"))
+```
+## What mechanisms
+<br>
+<br>
+```{r, calculate what mechanisms}
+mech.time <- dataP %>%
+  group_by(Study) %>%
+  summarize(Year = max(Year), 
+            Disp.y = any(Dispersal == "Y"),
+            Sp.int.y = any(Sp.int == "Y"),
+            phys.y = any(Physiology == "Y"),
+            Adaptation.y = any(Adaptation == "Y"),
+            Pop.diff.y = any(Pop.diff == "Y"),
+            Demo.y = any(Demography.LH == "Y")
+            ) %>%
+  group_by(Year) %>%
+  #summarize(N.mech = sum(as.numeric(any.mech.2)), N.models = n(), P.mech = sum(as.numeric(any.mech.2))/n()) %>%
+  summarize(N.models = sum(Disp.y,Sp.int.y,phys.y,Adaptation.y,Pop.diff.y,Demo.y),#n(), 
+            N.disp = sum(Disp.y),
+            N.spint = sum(Sp.int.y),
+            N.phys = sum(phys.y),
+            N.adapt = sum(Adaptation.y),
+            N.pdiff = sum(Pop.diff.y),
+            N.demo = sum(Demo.y)
+            ) %>%
+  #mutate(cum.mech = cumsum(N.mech), cum.N = cumsum(N.models), cum.P.mech = cum.mech/cum.N)
+  mutate(cum.N = cumsum(N.models), 
+         cum.disp.N.1 = cumsum(N.disp),
+         cum.spint.N.1 = cumsum(N.spint),
+         cum.phys.N.1 = cumsum(N.phys),
+         cum.adapt.N.1 = cumsum(N.adapt),
+         cum.pdiff.N.1 = cumsum(N.pdiff),
+         cum.demo.N.1 = cumsum(N.demo),
+         
+         cum.disp.p.1 = cum.disp.N.1/cum.N,
+         cum.spint.p.1 = cum.spint.N.1/cum.N,
+         cum.phys.p.1 = cum.phys.N.1/cum.N,
+         cum.adapt.p.1 = cum.adapt.N.1/cum.N,
+         cum.pdiff.p.1 = cum.pdiff.N.1/cum.N,
+         cum.demo.p.1 = cum.demo.N.1/cum.N
+          )
+
+n.mechs = 6; # number of mechanisms
+n.times = nrow(mech.time)
+data.2.plot.2 <- data.frame(Year = rep(mech.time$Year,n.mechs),
+        Mechanisms = rep(c("Dispersal", "Sp. interaction", "Physiology", "Adaptation", "Pop. difference", "Demography"),each = n.times), 
+    Proportions = c(mech.time$cum.disp.p.1, mech.time$cum.spint.p.1, mech.time$cum.phys.p.1, mech.time$cum.adapt.p.1, mech.time$cum.pdiff.p.1, mech.time$cum.demo.p.1))
+
+data.2.plot.2$Mechanisms <- factor(data.2.plot.2$Mechanisms, levels=c("Adaptation","Pop. difference","Demography","Dispersal","Sp. interaction","Physiology"))
+```
+
+## Create figures
+<br>
+<br>
+```{r, make figures}
+Fig5a <- ggplot(data.2.plot, aes(x = as.numeric(Year), y = Proportions, fill = Mechanisms)) +
+  geom_area() + 
+  #ylim(0,.5) + xlim(1995,2023) +
+  scale_fill_manual(values = c("#fbe8d0","#f6d0a1","#f2b973","#eda144","#e98a15")) +
+    scale_x_continuous(limits = c(1996,2023), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,.5), expand = c(0, 0),breaks = seq(0,.5,.1)) +
+    theme(axis.title.y=element_text(size=12), axis.title.x=element_blank(), axis.text.x = element_text(size = 10),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_rect(fill = "white")) +
+  #geom_text(aes(label = "No mechanisms"),x = 0,y = 0, size = 12) +
+  ggtitle("(A)") +
+  labs(y = "Cumulative proportion of models \n with mechanisms") 
+Fig5a
+#"#bcb9ca"
+Fig5b <- ggplot(data.2.plot.2, aes(x = as.numeric(Year), y = Proportions, fill = Mechanisms)) +
+  geom_area() +
+      scale_x_continuous(limits = c(1996,2023), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(0,1), expand = c(0, 0), breaks = seq(0,1,.2)) +
+  scale_fill_manual(values = c("Adaptation" ="#416788","Pop. difference" ="#8cb369","Demography" = "#58507A","Dispersal" = "#EFDE92","Sp. interaction" = "#CD5334","Physiology" = "#e98a15"), 
+    limits = c("Adaptation","Pop. difference","Demography","Dispersal", "Sp. interaction","Physiology")) +
+    theme(axis.title.y=element_text(size=12), axis.title.x=element_blank(), axis.text.x = element_text(size = 10),panel.background = element_rect(fill = "#bcb9ca"),panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + ggtitle("(B)") +
+  labs(y = "Cumulative proportion \n of mechanisms ") 
+
+Fig5b
+Fig5all <- ggarrange(Fig5a, NULL, Fig5b, NULL, ncol = 2, nrow=2, heights = c(4,4,4,4), widths = c(6,.4,6,.05))
+
+annotate_figure(Fig5all,
+                top = text_grob("No mechanisms",size = 10,vjust = 6,hjust = 0), 
+                fig.lab.pos = "top.right")
+#
+#ggsave("Metarisk2 mechanisms.png",width=8,height=6,unit="in",dpi="print")
+```
+
