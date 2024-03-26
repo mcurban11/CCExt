@@ -1,0 +1,494 @@
+---
+title: "Extinction risk from climate change: through time"
+output: word_document
+date: "Feb. 27, 2024"
+---
+## Test for effect of time of study on results
+
+Here I wanted to test to see if the year of study affected predictions. I split the data into original data from the 2015 analysis and new data. I also included an interaction term in case the slopes differ. 
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE) 
+```
+
+## Load libraries and data
+
+```{r, load libraries and data, results='hide', message = F}
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+# Load libraries and data
+library(coda); library(ggplot2); library(rstan); library(bayesplot); library(loo); library(rstanarm);
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = FALSE)
+
+dataP<-read.table("Metarisk2 aggthres 5.txt",header=T); #newest data with slight fix to dispersal data
+dataP2<-dataP[is.finite(dataP$Pre.Ind.Rise),]; attach(dataP2) # need to eliminate NA s for pre-industrial rise or stat programs crash
+
+#Bayesian stan model proportional and weighted
+#betareg requires no 0s or 1s
+koffset = 0.001 #the k that gives the best posterior predictive check
+percent2 <- adj.percent
+percent2[adj.percent == 0] = koffset;
+percent2[adj.percent == 1] = 1 - koffset;
+dataP2$percent2 <- percent2;
+
+#create categorical factor of era ~ 90s, 00s, 10s, 20s
+dataP2$era <- ifelse(Year < 2000, "1990s",
+                     ifelse(Year < 2010, "2000s",
+                            ifelse(Year < 2020, "2010s", "2020s")))
+data.use<-dataP2
+
+#Prepare data for models
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+```
+
+## Test for effect of decade
+### Same-intercept model
+
+```{r time analysis by decade, same intercept}
+#create model matrix for coefficients
+betamat<-(model.matrix(~era * Pre.Ind.Rise,data=data.use))[,2:8]   #create model matrix, exclude intercept which is modeled separately as mu (to allow for informed prior)
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+# params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+# 
+# init.fn<- function (chain_id) {
+#   list(mu = -5, beta = c(0,.6,0))
+# }
+
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#          chains = 3, warmup=5000, cores=7,iter=8000,
+#         init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("3timecat.rds") #minor fixes to years of publications
+params.to.monitor2=c("mu","beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+
+```{r LOO table 1}
+load("3timecat.rds")
+loo.mod2=loo.mod # rename loo.mod so can load base model
+
+load("2pre_lowb.rds") #load base model
+loo.mod1=loo.mod
+
+#create data frame of looics from two models
+table.data<-data.frame(
+  Model = c("Base model","Model with decade"),
+  LOOic = c(loo.mod1$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod1$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Comparisons of LOOic between baseline and Model with decade", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod1$estimates[3]
+table.data
+cat("Delta LoOic = ", Looic.diff)
+```
+```{r Fig 2 by decade common intercept, fig.cap = "Fig. Predicted extinction risk versus pre-industrial temperature rise across decades.",warning=FALSE}
+#Prediction range
+P.Ind<-seq(from = 0.4, to = 5.5,by = .1) #don't extrapolate rise  min(Pre.Ind.Rise)= 0.4
+
+load("3timecat.rds")
+modx = mod
+load("2pre_lowb.rds") 
+
+#Calculate estimates; note original is 1 in matrix
+posterior=as.data.frame(modx);
+a.all <- posterior[["mu"]]
+b.90 <- posterior[["beta[1]"]]
+b.00 <- posterior[["beta[2]"]] 
+b.10 <- posterior[["beta[3]"]] 
+b.20 <- posterior[["beta[4]"]] 
+
+#For each decade
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {a.all[x] + b.90[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df <- data.frame(x = P.Ind,
+                          mean_line_90 = pred.reg.quant[2,],
+                          low_line_90 = pred.reg.quant[1,],
+                          hi_line_90= pred.reg.quant[3,])
+
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {a.all[x] + b.00[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_00 = pred.reg.quant[2,]
+pred.reg.df$low_line_00 = pred.reg.quant[1,]
+pred.reg.df$hi_line_00= pred.reg.quant[3,]
+
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {a.all[x] + b.10[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_10 = pred.reg.quant[2,]
+pred.reg.df$low_line_10 = pred.reg.quant[1,]
+pred.reg.df$hi_line_10= pred.reg.quant[3,]
+
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {a.all[x] + b.20[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_20 = pred.reg.quant[2,]
+pred.reg.df$low_line_20 = pred.reg.quant[1,]
+pred.reg.df$hi_line_20= pred.reg.quant[3,]
+
+Fig1<-ggplot(data = pred.reg.df)+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_90,ymax=hi_line_90),alpha=.7,fill="#416788")+
+  geom_line(aes(x=P.Ind,y=mean_line_90),size=1.5,color="#416788")+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_00,ymax=hi_line_00),alpha=.7,fill="#5b507b")+
+  geom_line(aes(x=P.Ind,y=mean_line_00),size=1.5,color="#5b507b")+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_10,ymax=hi_line_10),alpha=.7,fill="#5b307b")+
+  geom_line(aes(x=P.Ind,y=mean_line_10),size=1.5,color="#5b307b")+
+  geom_ribbon(aes(x=P.Ind,ymin=low_line_20,ymax=hi_line_20),alpha=.5,fill="#5b000b")+
+  geom_line(aes(x=P.Ind,y=mean_line_20),size=1.5,color="#5b000b")+
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk")+
+  theme_classic()+
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size="none")
+Fig1
+
+#ggsave("FigSx pre by time2.png",width=8,height=6,unit="in",dpi="print")
+```
+
+
+
+```{r time analysis by decade, full model}
+#create model matrix for coefficients
+betamat<-(model.matrix(~era * Pre.Ind.Rise,data=data.use))[,2:8]   #create model matrix, exclude intercept which is modeled separately as mu (to allow for informed prior)
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.fn<- function (chain_id) {
+  list(mu = -5, beta = c(0,.6,0))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#          chains = 3, warmup=5000, cores=7,iter=8000,
+#         init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2timecat.rds")
+params.to.monitor2=c("mu","beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+```{r LOO table 2}
+load("2timecat.rds")
+loo.mod2=loo.mod # rename loo.mod so can load base model
+load("2pre_lowb.rds") #load base model
+
+#create data frame of looics from two models
+table.data<-data.frame(
+  Model = c("Base model","Model with decade (full)"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Comparisons of LOOic between baseline and Full Model with decade", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+print(Looic.diff)
+```
+## Previous study versus current study
+Interactive time model LOOic is larger than additive time model, delta LOOic = +6.0. Also, the interaction term overlaps with zero. No support for interactive model.
+
+```{r time analysis (same intercept)}
+#create model matrix for coefficients
+betamat<-(model.matrix(~Time:Pre.Ind.Rise,data=data.use))[,2:3]  #create model matrix, exclude intercept which is modeled separately as mu (to allow for informed prior)
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.fn<- function (chain_id) {
+  list(mu = -5, beta = c(0,.6,0))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#          chains = 3, warmup=5000, cores=7,iter=8000,
+#         init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2pre_time2.rds")
+params.to.monitor2=c("mu","beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+
+```{r LOO table 5}
+load("2pre_time2.rds")
+loo.mod2=loo.mod # rename loo.mod so can load base model
+mod2 = mod
+load("2pre_lowb.rds") #load base model
+
+#create data frame of looics from two models
+table.data<-data.frame(
+  Model = c("Base model","Model including study period"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Comparisons of LOOic between baseline and Model with study period", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+print(Looic.diff)
+```
+
+## Results - Analysis of original and new studies
+I found no model support for an additive time factor because the change in LOOic is positive = 26.8, meaning that the model with time is worse than the model without time.
+
+```{r Fig 1: Same intercept model, fig.cap = "Fig. x. Predicted extinction risk versus pre-industrial temperature rise for original (red) and new (blue) estimates."}
+P.Ind<-seq(from = 0.4, to = 5.5,by = .1) #don't extrapolate rise  min(Pre.Ind.Rise)= 0.4
+
+load("2pre_time2.rds")
+modx = mod
+load("2pre_lowb.rds") 
+
+#Calculate estimates; note original is 1 in matrix
+posterior=as.data.frame(modx); 
+beta.new<-posterior[["beta[1]"]]
+beta.old<-posterior[["beta[2]"]]
+
+#compare new vs old slopes
+beta.diff<-beta.new-beta.old;
+beta.diff.comp <- (quantile(beta.diff, probs = c(0.025, 0.5, 0.975)))
+beta.diff.comp
+
+#For new data
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {posterior$mu[x] + beta.new[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df <- data.frame(x = P.Ind,
+                          mean_line_new = pred.reg.quant[2,],
+                          low_line_new = pred.reg.quant[1,],
+                          hi_line_new= pred.reg.quant[3,])
+
+#for original data
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {posterior$mu[x] + beta.old[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_orig = pred.reg.quant[2,]
+pred.reg.df$low_line_orig = pred.reg.quant[1,]
+pred.reg.df$hi_line_orig= pred.reg.quant[3,]
+
+Fig1<-ggplot(data = pred.reg.df)+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_orig,ymax=hi_line_orig),alpha=.7,fill="#5b507b")+
+  geom_line(aes(x=P.Ind,y=mean_line_orig),size=1.5,color="#5b507b")+
+  geom_ribbon(aes(x=P.Ind,ymin=low_line_new,ymax=hi_line_new),alpha=.5,fill="#416788")+
+  geom_line(aes(x=P.Ind,y=mean_line_new),size=1.5,color="#416788")+
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk")+
+  theme_classic()+
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig1
+
+#ggsave("FigSx pre by time.png",width=8,height=6,unit="in",dpi="print")
+```
+
+```{r time analysis (same slope different intercepts)}
+#create model matrix for coefficients
+betamat<-(model.matrix(~Time+Pre.Ind.Rise,data=data.use))[,2:3] #create model matrix, exclude intercept which is modeled separately as mu (to allow for informed prior)
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.fn<- function (chain_id) {
+  list(mu = -5, beta = c(0,.6,0))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#          chains = 3, warmup=5000, cores=7,iter=8000,
+#         init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2pre_time3.rds")
+params.to.monitor2=c("mu","beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+
+```{r LOO table 6}
+load("2pre_time3.rds")
+loo.mod2=loo.mod # rename loo.mod so can load base model
+mod2 = mod
+load("2pre_lowb.rds") #load base model
+
+#create data frame of looics from two models
+table.data<-data.frame(
+  Model = c("Base model","Model including study period"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Comparisons of LOOic between baseline and Model with study period", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+print(Looic.diff)
+```
+
+## Results - Same slope model of original and new studies
+I found no model support for an additive time factor because the change in LOOic is positive = 48.9 and greater than for the same-intercept model, meaning that this model with time is worse than the model without time and with the same intercept.
+
+```{r Same slope different intercept model, fig.cap = "Fig. x. Predicted extinction risk versus pre-industrial temperature rise for original (red) and new (blue) estimates."}
+P.Ind<-seq(from = 0.4, to = 5.5,by = .1) #don't extrapolate rise  min(Pre.Ind.Rise)= 0.4
+
+load("2pre_time3.rds")
+modx = mod
+load("2pre_lowb.rds") 
+
+#Calculate estimates; note original is 1 in matrix
+posterior=as.data.frame(modx); 
+alpha.old<-posterior[["beta[1]"]]
+beta<-posterior[["beta[2]"]]
+
+#For new data
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {posterior$mu[x] + beta[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df <- data.frame(x = P.Ind,
+                          mean_line_new = pred.reg.quant[2,],
+                          low_line_new = pred.reg.quant[1,],
+                          hi_line_new= pred.reg.quant[3,])
+
+#for original data
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {posterior$mu[x] + alpha.old[x] + beta[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_orig = pred.reg.quant[2,]
+pred.reg.df$low_line_orig = pred.reg.quant[1,]
+pred.reg.df$hi_line_orig= pred.reg.quant[3,]
+
+Fig1<-ggplot(data = pred.reg.df)+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_orig,ymax=hi_line_orig),alpha=.7,fill="#5b507b")+
+  geom_line(aes(x=P.Ind,y=mean_line_orig),size=1.5,color="#5b507b")+
+  geom_ribbon(aes(x=P.Ind,ymin=low_line_new,ymax=hi_line_new),alpha=.5,fill="#416788")+
+  geom_line(aes(x=P.Ind,y=mean_line_new),size=1.5,color="#416788")+
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk")+
+  theme_classic()+
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig1
+
+ggsave("FigSx time same slope.png",width=8,height=6,unit="in",dpi="print")
+```
+## Conclusion
+The model with study period as a factor and its interaction with temperature does not improve upon the base model. The LOOic is larger, indicating poorer fit, however the 95% credible intervals for the slopes do not overlap zero.
+
+## Comparing old studies and all studies
+
+```{r comparing all and old, fig.cap = "Fig. x. Predicted extinction risk versus pre-industrial temperature rise for original (red) and all (blue) estimates."}
+P.Ind<-seq(from = 0.4, to = 5.5,by = .1) #don't extrapolate rise  min(Pre.Ind.Rise)= 0.4
+
+load("2pre_time2.rds")
+modx = mod
+posterior=as.data.frame(modx); 
+
+load("2pre_lowb.rds") 
+posterior.all = as.data.frame(mod)
+#Calculate estimates; note original is 1 in matrix
+
+beta.all<-posterior.all[["beta"]]
+beta.old<-posterior[["beta[2]"]]
+
+#compare new vs old slopes
+beta.diff<-beta.all-beta.old;
+beta.diff.comp <- (quantile(beta.diff, probs = c(0.025, 0.5, 0.975)))
+beta.diff.comp
+
+#For all data
+pred.reg = sapply(1:length(posterior.all$mu), FUN = function(x) {posterior.all$mu[x] + beta.all[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df <- data.frame(x = P.Ind,
+                          mean_line_all = pred.reg.quant[2,],
+                          low_line_all = pred.reg.quant[1,],
+                          hi_line_all = pred.reg.quant[3,],
+                          range_line_all = pred.reg.quant[3,] - pred.reg.quant[1,])
+
+#for original data
+pred.reg = sapply(1:length(posterior$mu), FUN = function(x) {posterior$mu[x] + beta.old[x]*P.Ind})
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_line_orig = pred.reg.quant[2,]
+pred.reg.df$low_line_orig = pred.reg.quant[1,]
+pred.reg.df$hi_line_orig= pred.reg.quant[3,]
+pred.reg.df$range_line_orig= pred.reg.quant[3,] - pred.reg.quant[1,]
+
+pred.reg.df$prop.lower = (pred.reg.df$range_line_all)-(pred.reg.df$range_line_orig)
+
+Fig1<-ggplot(data = pred.reg.df)+
+      geom_ribbon(aes(x=P.Ind,ymin=low_line_orig,ymax=hi_line_orig),alpha=.7,fill="#5b507b")+
+  geom_line(aes(x=P.Ind,y=mean_line_orig),size=1.5,color="#5b507b")+
+  geom_ribbon(aes(x=P.Ind,ymin=low_line_all,ymax=hi_line_all),alpha=.5,fill="#416788")+
+  geom_line(aes(x=P.Ind,y=mean_line_all),size=1.5,color="#416788")+
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk")+
+  theme_classic()+
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig1
+
+manual_labels <- c("range_line" = "Label A", 
+                   "Group B" = "Label B",
+                   "Group C" = "Label C")
+
+Fig2<-ggplot(data = pred.reg.df)+
+  geom_hline(yintercept = 0, color = "darkgrey") +
+  geom_line(aes(x=P.Ind,y=range_line_orig,color="#5b507b"),size=1.5)+
+  geom_line(aes(x=P.Ind,y=range_line_all,color="#416788"),size=1.5)+
+  geom_line(aes(x=P.Ind,y=prop.lower/1,color="#F68928"),size=1.5)+
+  scale_y_continuous(sec.axis = sec_axis(~.*1, name = "Difference in range")) +
+  
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Credible interval range")+
+  theme_classic()+  
+  scale_color_identity("Credible interval range",guide = "legend", breaks = c("#5b507b","#416788","#F68928"),
+                       labels =c("Original","New","Difference")) +
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16),legend.position = c(.25, .83), legend.title = element_text(size = 18), legend.text = element_text(size = 16))
+  #guides(size=F)
+Fig2
+
+#ggsave("FigS8 pre all vs old.png",width=8,height=6,unit="in",dpi="print")
+```
+
