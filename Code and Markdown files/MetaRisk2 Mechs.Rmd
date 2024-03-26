@@ -1,0 +1,1022 @@
+---
+title: "Extinction risk from climate change: Biological and physical processes"
+output: word_document
+date: "March 25th, 2024"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE) #, cache.lazy = FALSE, cache = TRUE
+```
+
+## Load libraries and data
+<br>
+
+```{r load libraries and data, warning = FALSE}
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+
+ #load libraries
+library(coda); library(ggplot2); library(rstan); library(bayesplot); library(shinystan); library(loo); library(rstanarm); library(dplyr); library(ggpubr)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = FALSE)
+
+#load data
+dataP<-read.table("MetaRisk2 aggthres 5.txt",header=T); attach(dataP)
+
+#other quantities
+#betareg requires no 0s or 1s
+koffset = 0.001 #the k that gives the best posterior predictive check
+percent2 <- adj.percent
+percent2[adj.percent == 0] = koffset;
+percent2[adj.percent == 1] = 1 - koffset;
+dataP$percent2 <- percent2;
+
+data.use<-dataP; attach(data.use)
+
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+
+#load intercept model
+load("2all_interc.rds")
+mod.int<-mod
+loo.mod.int<-loo.mod
+```
+
+
+## Test for the overall effect of mechanisms
+Here I tested if extinction predictions change based on adding all mechanisms.
+<br>
+```{r all mech analysis}
+#form matrix of factors
+#create model matrix for coefficients
+betamat <- data.frame(
+  Intercept = rep(1,N),
+  Dispersal = ifelse(data.use$Dispersal == "Y",1,0),
+  Sp.int = ifelse(data.use$Sp.int == "Y",1,0),
+  Physiology = ifelse(data.use$Physiology == "Y",1,0),
+  Adaptation = ifelse(data.use$Adaptation == "Y",1,0),
+  Pop.diff = ifelse(data.use$Pop.diff == "Y",1,0),
+  Demography.LH = ifelse(data.use$Demography.LH == "Y",1,0),
+  Earth.Sys = ifelse(data.use$Earth.Sys == "Y",1,0),
+  Other.Habitat = ifelse(data.use$Other.Habitat == "Y",1,0))
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+# init.beta=rep(0,ncol(betamat)-1)
+# init.fn<- function (chain_id) {
+#   list(beta = c(-2.5,init.beta))
+# }
+# 
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("3allmechs.rds")#load("2disp.rds") #replace once run
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 1}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanisms"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 1: Comparisons of LOOic without and with all mechanisms", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Test for effect of modeling dispersal
+Here I tested if extinction predictions change based on whether species-specific dispersal was modeled. I predicted that extinction risks would not vary overall from the median, assuming that models that do not model dispersal explicitly model an overall mean value.
+<br>
+```{r dispersal analysis}
+#form matrix of factors
+betamat <- model.matrix(~Dispersal, data = data.use) # 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+ # mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+ #           chains = 3, warmup=5000, cores=7,iter=8000,
+ #          init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2disp.rds")#load("2disp.rds") #replace once run
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 2}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 2: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Results
+No support for the model (LOOic is higher).
+<br>
+## Effect of modeling species interactions
+Here I tested if extinction predictions change based on if species interactions were included or not. I predicted that extinction risks would not vary overall from the median, assuming that models that do not model species interactions explicitly model an overall mean value.
+<br>
+```{r species interactions analysis}
+#form matrix
+betamat <- model.matrix(~Sp.int, data = data.use) # 1 - No, 2 - Some, 3 - Yes
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+# init.beta=rep(0,ncol(betamat)-1)
+# init.fn<- function (chain_id) {
+#   list(beta = c(-2.5,init.beta))
+# }
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("2spint.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 3}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 3: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is better with species interactions (delta LOOIC is negative).
+<br>
+<br>
+## Effect of modeling physiology
+Here I tested if extinction predictions change based on if physiology was included or not. I predicted that extinction risks would not vary overall from the median, assuming that models that do not model physiology explicitly model an overall mean value.
+<br>
+```{r physiology analysis}
+betamat <- model.matrix(~Physiology, data = data.use) # 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("2phys.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 4}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 4: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is worse with physiology (delta LOOIC is positive).
+<br>
+## Effect of modeling demography
+Here I tested if extinction predictions change based on if demography was included or not. I predicted that extinction risks would not vary overall from the median, assuming that models that do not model demography explicitly model an overall mean value.
+<br>
+```{r demography}
+betamat <- model.matrix(~Demography.LH) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+load("2demo.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 5}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 5: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is better with demography (delta LOOIC is negative). Extinction risks increase when demography is modeled.
+<br>
+<br>
+## Effect of modeling population differentiation
+Here I tested if extinction predictions change based on if population differentiation was included or not. I predicted that extinction risks would decrease from the median, assuming that population differentiation indicates more adaptability in species than usually modeled.
+<br>
+```{r pop diff}
+betamat <- model.matrix(~Pop.diff) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+load("2pdiff.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 6, cache = TRUE}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 6: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is worse with population differentiation (delta LOOIC is positive).
+<br>
+<br>
+## Effect of modeling adaptation
+Here I tested if extinction predictions change based on if adaptation was included or not. I predicted that extinction risks would decrease from the median, assuming that adaptation indicates more adaptability in species than usually modeled.
+<br>
+```{r adapt}
+betamat <- model.matrix(~Adaptation) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+load("2adapt.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 7, cache = TRUE}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 7: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is worse with adaptation (delta LOOIC is positive). However, there is a suggestion that extinction risks increase with adaptation.
+<br>
+<br>
+## Effect of modeling habitat
+Here I tested if extinction predictions change based on if non-climate habitat variation was included or not. I predicted that extinction risks would increase from the median, assuming that habitat variation would reduce ranges more than just climate alone and thus increase risks.
+<br>
+```{r habitat}
+betamat <- model.matrix(~Other.Habitat) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+load("2habitat.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 8}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 8: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is better with habitat (delta LOOIC is negative). However, the effect is not borne out by credible intervals of the contrast.
+<br>
+<br>
+
+## Effect of modeling Earth systems
+Here I tested if extinction predictions change based on if Earth systems models were included or not. I predicted that extinction risks would not affect model outcomes.
+<br>
+```{r earth}
+betamat <- model.matrix(~Earth.Sys) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=7000, cores=3,iter=10000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+load("2earth.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 9}
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including mechanism"),
+  LOOic = c(loo.mod.int$estimates[3],loo.mod$estimates[3]),
+  SE = c(loo.mod.int$estimates[6],loo.mod$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 9: Comparisons of LOOic without and with mechanism", format = "markdown")
+Looic.diff = loo.mod$estimates[3] - loo.mod.int$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+## Result
+Overall model is worse with Earth systems (delta LOOIC is positive).
+<br>
+<br>
+##Compiile results and create figures
+<br>
+```{r compile individual results}
+n.total <- nrow(data.use)  #total N
+
+#use common median threat
+posterior2=as.data.frame(mod.int)
+grand.mean = posterior2[["mu"]]
+grand.mean.pred <- invlogit(quantile(grand.mean, probs = c(0.025, 0.5, 0.975)))
+
+#*****************************************************************************************
+load("2disp.rds") #replace with load("2disp.rds") when done
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Threatened == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Threatened == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals <- data.frame(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+
+#*****************************************************************************************
+load("2spint.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Threatened == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Threatened == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[2,] <- data.frame(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+
+#*****************************************************************************************
+
+load("2phys.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Non.clim.threat == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Non.clim.threat == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[3,] <- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+
+load("2demo.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[4,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************  
+load("2pdiff.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[5,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+#*
+load("2adapt.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[6,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+#
+load("2habitat.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[7,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+#
+load("2earth.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[8,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+#
+
+threat.vals$threat = c("Dispersal","Species Interactions", "Physiology", "Demography", "Population differentiation", "Adaptation", "Habitat", "Earth systems")
+
+save(threat.vals,file ="Mech traits results.rds")
+threat.vals.r <- threat.vals
+threat.vals.r[,1:13] <- round((threat.vals.r[,1:13]), digits = 4)
+knitr::kable(threat.vals.r, caption = "Table 10: Extinction risk by mechanistic traits and difference from mean, with 95% credible intervals", format = "markdown", font = 5)
+```
+
+```{r Fig 1: Threat, fig.cap = "Fig. 1. Predicted extinction risk based on various mechanistic assumptions."}
+#arrange in increasing order#
+threat.vals$threat = with (threat.vals, reorder(threat, beta.Y))
+
+#Figures
+Fig1a<-ggplot(data = threat.vals)+
+  geom_vline(xintercept=grand.mean.pred[2]) +
+  geom_errorbar(aes(y = threat, xmin = beta.Y.lo, xmax = beta.Y.hi), width = 0) +
+  geom_point(stat = "identity", aes(y = threat, x = beta.Y), color = "#416788", size = 3, shape = 15) +
+  xlab("Pre-industrial rise \n in temperature (C)") + xlim(c(0,.35)) +
+  theme_classic()+ 
+  theme(axis.title.y = element_blank(),axis.title=element_text(size=14),axis.text = element_text(size=12))+
+  guides(size=F)
+Fig1a
+
+#Differences from zero
+glob.mean.over <- rep("n",nrow(threat.vals))
+glob.mean.over[threat.vals$beta.Y.mean > 0 & threat.vals$beta.Y.mean.lo > 0] = "y"
+glob.mean.over[threat.vals$beta.Y.mean < 0 & threat.vals$beta.Y.mean.hi < 0] = "y"
+threat.vals$glob.mean.over <- glob.mean.over
+
+Fig1b <- ggplot(data = threat.vals)+
+  geom_vline(xintercept=0) +
+  geom_errorbar(aes(y = threat, xmin = beta.Y.mean.lo, xmax = beta.Y.mean.hi), width = 0) +
+  geom_point(stat = "identity", aes(y = threat, x = beta.Y.mean, color = glob.mean.over), size = 3, shape = 15) +
+  scale_color_manual(values=c('grey','#5B507A'))+
+  xlab("Percent difference \n from global mean") + xlim(c(-.15,.3)) +
+  theme_classic()+ 
+  theme(axis.title.y = element_blank(),axis.ticks.y = element_blank(),axis.line.y = element_blank(),axis.text.y = element_blank(),
+        axis.title=element_text(size=14),axis.text = element_text(size=12),legend.position = "none")+
+  guides(size=F) 
+Fig1b
+
+ggarrange(Fig1a, NULL, Fig1b, ncol=3, widths = c(4,.4, 2))
+
+#ggsave("Metarisk2 mech.png",width=8,height=6,unit="in",dpi="print")
+```
+
+```{r Fig 2: Threat, fig.cap = "Fig. 2. Predicted extinction risk based on various mechanistic assumptions."}
+threat.YN<-data.frame(
+  threat = c("Dispersal - N","Dispersal - Y","Sp. Int. - N","Sp. Int. - Y","Physiology - N","Physiology - Y","Demography - N","Demography - Y","Pop. diff. - N","Pop. diff. - Y","Adaptation - N","Adaptation - Y","Habitat - N","Habitat - Y","Earth systems - N","Earth systems - Y"),
+  YN = rep(c("N","Y"),8),
+  beta = c(threat.vals$beta.N[1],threat.vals$beta.Y[1],threat.vals$beta.N[2],threat.vals$beta.Y[2],threat.vals$beta.N[3],threat.vals$beta.Y[3],threat.vals$beta.N[4],threat.vals$beta.Y[4],threat.vals$beta.N[5],threat.vals$beta.Y[5],threat.vals$beta.N[6],threat.vals$beta.Y[6],threat.vals$beta.N[7],threat.vals$beta.Y[7],threat.vals$beta.N[8],threat.vals$beta.Y[8]),
+   beta.lo = c(threat.vals$beta.N.lo[1],threat.vals$beta.Y.lo[1],threat.vals$beta.N.lo[2],threat.vals$beta.Y.lo[2],threat.vals$beta.N.lo[3],threat.vals$beta.Y.lo[3],threat.vals$beta.N.lo[4],threat.vals$beta.Y.lo[4],threat.vals$beta.N.lo[5],threat.vals$beta.Y.lo[5],threat.vals$beta.N.lo[6],threat.vals$beta.Y.lo[6],threat.vals$beta.N.lo[7],threat.vals$beta.Y.lo[7],threat.vals$beta.N.lo[8],threat.vals$beta.Y.lo[8]),
+    beta.hi = c(threat.vals$beta.N.hi[1],threat.vals$beta.Y.hi[1],threat.vals$beta.N.hi[2],threat.vals$beta.Y.hi[2],threat.vals$beta.N.hi[3],threat.vals$beta.Y.hi[3],threat.vals$beta.N.hi[4],threat.vals$beta.Y.hi[4],threat.vals$beta.N.hi[5],threat.vals$beta.Y.hi[5],threat.vals$beta.N.hi[6],threat.vals$beta.Y.hi[6],threat.vals$beta.N.hi[7],threat.vals$beta.Y.hi[7],threat.vals$beta.N.hi[8],threat.vals$beta.Y.hi[8])
+)
+
+#set colors
+boolColors <- as.character(c("N"="#416788", "Y"="#8cb369"))
+boolScale <- scale_colour_manual(name="YN", values=boolColors)
+
+#Figures
+Fig2<-ggplot(data = threat.YN)+
+  geom_vline(xintercept=grand.mean.pred[2]) +
+  geom_errorbar(aes(y = threat, xmin = beta.lo, xmax = beta.hi), width = 0) +
+  geom_point(stat = "identity", aes(y = threat, x = beta, color = YN), size = 3, shape = 15) +
+  xlab("Pre-industrial rise \n in temperature (C)") + xlim(c(0,.35)) +
+  theme_classic() + boolScale + 
+  theme(axis.title.y = element_blank(),axis.title=element_text(size=14),axis.text = element_text(size=12))+
+  guides(color = guide_legend(""))
+Fig2
+
+#ggsave("Metarisk2 mech YN.png",width=8,height=6,unit="in",dpi="print")
+```
+
+```{r sample sizes}
+#catalog sample sizes
+N.1.st<-length(unique(dataP$Study[dataP$Dispersal == "Y"]))
+N.1.mod<-length((dataP$Study[dataP$Dispersal == "Y"]))
+
+N.2.st<-length(unique(dataP$Study[dataP$Sp.int == "Y"]))
+N.2.mod<-length((dataP$Study[dataP$Sp.int == "Y"]))
+
+N.3.st<-length(unique(dataP$Study[dataP$Physiology == "Y"]))
+N.3.mod<-length((dataP$Study[dataP$Physiology == "Y"]))
+
+N.4.st<-length(unique(dataP$Study[dataP$Demography.LH == "Y"]))
+N.4.mod<-length((dataP$Study[dataP$Demography.LH == "Y"]))
+
+N.5.st<-length(unique(dataP$Study[dataP$Pop.diff == "Y"]))
+N.5.mod<-length((dataP$Study[dataP$Pop.diff == "Y"]))
+
+N.6.st<-length(unique(dataP$Study[dataP$Adaptation == "Y"]))
+N.6.mod<-length((dataP$Study[dataP$Adaptation == "Y"]))
+                
+N.7.st<-length(unique(dataP$Study[dataP$Other.Habitat == "Y"]))
+N.7.mod<-length((dataP$Study[dataP$Other.Habitat == "Y"]))
+
+N.8.st<-length(unique(dataP$Study[dataP$Earth.Sys == "Y"]))
+N.8.mod<-length((dataP$Study[dataP$Earth.Sys == "Y"]))
+
+table.data<-data.frame(
+  Factor = threat.vals$threat,
+  Studies = c(N.1.st,N.2.st,N.3.st,N.4.st,N.5.st,N.6.st,N.7.st,N.8.st),
+  Models = c(N.1.mod,N.2.mod,N.3.mod,N.4.mod,N.5.mod,N.6.mod,N.7.mod,N.8.mod)
+)
+knitr::kable(table.data, caption = "Table 2: Number of studies and models for each factor", format = "markdown")
+```
+
+## Conclusion
+Studies that included species-specific demography, species interactions, and xx predicted higher extinction risks.
+<br>
+<br>
+# Variation explained
+<br>
+```{r, var explained, warning=FALSE}
+#After Gelman 2019 R2 for Bayesian
+#
+#Load model and beta matrix - check if mu is modeled separately
+load("3allmechs.rds")
+posterior=as.data.frame(mod);
+
+betamat <- data.frame(
+  Intercept = rep(1,N),
+  Dispersal = ifelse(data.use$Dispersal == "Y",1,0),
+  Sp.int = ifelse(data.use$Sp.int == "Y",1,0),
+  Physiology = ifelse(data.use$Physiology == "Y",1,0),
+  Adaptation = ifelse(data.use$Adaptation == "Y",1,0),
+  Pop.diff = ifelse(data.use$Pop.diff == "Y",1,0),
+  Demography.LH = ifelse(data.use$Demography.LH == "Y",1,0),
+  Earth.Sys = ifelse(data.use$Earth.Sys == "Y",1,0),
+  Other.Habitat = ifelse(data.use$Other.Habitat == "Y",1,0))
+
+#Variables and matrices
+S = 9000; #samples
+K = ncol(betamat); #factors
+p.mat <- as.matrix(posterior[,1:K])
+y = dataP$percent2 
+y.mat = t(matrix(rep(y,S), nrow = N, ncol = S))
+y.mean <- mean(y)
+
+#Calculate y.pred for fixed effects only
+y.pred <- matrix(rep(NA, N*S), nrow = S, ncol = N)
+theta <- y.pred
+for (i in 1:N) {
+      theta[,i] = invlogit(p.mat %*% t(betamat[i,]))#rows = samples, cols = i
+      y.pred[,i] = (theta[,i] * data.use$Total.N[i])/(theta[,i] * data.use$Total.N[i] + (1-theta[,i]) * data.use$Total.N[i])
+}
+
+#Calcluate residual variance
+res.f = y.mat - y.pred    
+RSS.f = rowSums((res.f)^2)
+res.v.f = 1/(N -1) * RSS.f
+
+#Calculate fit variance
+pred.v.f = 1/(N-1) * rowSums((y.pred)^2)
+
+#Calculate R2
+R2.v.f = pred.v.f/(pred.v.f + res.v.f)
+cat("fixed effects R2 = ", quantile(R2.v.f,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+#Total model With random effects
+y.pred.c <-(as.matrix(posterior[,(K+1):(N+K)])) #calculated in STAN, with all RE and weightings
+
+#Calculate residual variance
+res.c = y.mat - y.pred.c    
+RSS.c = rowSums((res.c)^2)
+res.v.c = 1/(N-1) * RSS.c
+
+#Calculate fit variance
+
+pred.v.c = 1/(N-1) * rowSums(y.pred.c^2)
+
+#Calculate full model R2
+R2.v.c = pred.v.c/(pred.v.c + res.v.c)
+print("                                                   ")
+cat("Overall model R2 = ", quantile(R2.v.c,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+```
