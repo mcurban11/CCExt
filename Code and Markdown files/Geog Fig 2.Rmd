@@ -1,0 +1,749 @@
+---
+title: "Extinction risk from climate change: geography figure"
+output: word_document
+date: "Mar. 25th, 2024"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE) 
+```
+
+## Load libraries and data
+
+```{r load libraries and data, message = FALSE}
+
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+
+ #load libraries
+library(coda); library(ggplot2); library(rstan); library(bayesplot); library(shinystan); library(loo); library(rstanarm); library(dplyr); library(ggpubr); library(rworldmap); library(rnaturalearth); library(sf)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = FALSE)
+
+#load data
+dataP<-read.table("MetaRisk2 aggthres 5.txt",header=T); attach(dataP)
+
+#Bayesian stan model proportional and weighted
+#betareg requires no 0s or 1s
+koffset = 0.001 #the k that gives the best posterior predictive check
+percent2 <- adj.percent
+percent2[adj.percent == 0] = koffset;
+percent2[adj.percent == 1] = 1 - koffset;
+dataP$percent2 <- percent2;
+
+data.use<-dataP
+
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+```
+
+## Continent + latitude model
+
+```{r Additive model}
+#create model matrix for coefficients
+#betamat <- model.matrix(~Region + Antarctic + S.Middle + Tropics + N.Middle + Arctic, data=data.use) #relative to global mean 
+
+betamat <- data.frame(Afr.Tr = rep(1,N),
+             Afr.NM = ifelse(data.use$Region == "Africa" & data.use$N.Middle == "Y",1,0),
+             Afr.SM = ifelse(data.use$Region == "Africa" & data.use$S.Middle == "Y",1,0),
+             Asia.NM = ifelse(data.use$Region == "Asia" & data.use$N.Middle == "Y",1,0),
+             Asia.Tr = ifelse(data.use$Region == "Asia" & data.use$Tropics == "Y",1,0),
+             ANZ.Tr = ifelse(data.use$Region == "AustraliaNewZealand" & data.use$Tropics == "Y",1,0),
+             ANZ.SM = ifelse(data.use$Region == "AustraliaNewZealand" & data.use$S.Middle == "Y",1,0),
+             Euro.NM = ifelse(data.use$Region == "Europe" & data.use$N.Middle == "Y",1,0),
+             Euro.Arc = ifelse(data.use$Region == "Europe" & data.use$Arctic == "Y",1,0),
+             NAm.NM = ifelse(data.use$Region == "Namerica" & data.use$N.Middle == "Y",1,0),
+             NAm.Arc = ifelse(data.use$Region == "Namerica" & data.use$Arctic == "Y",1,0),
+             NAm.Tr = ifelse(data.use$Region == "Namerica" & data.use$Tropics == "Y",1,0),
+             SAm.SM = ifelse(data.use$Region == "Samerica" & data.use$S.Middle == "Y",1,0),
+             SAm.Tr = ifelse(data.use$Region == "Samerica" & data.use$Tropics == "Y",1,0))
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+
+# params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+# 
+# init.beta=rep(0,ncol(betamat)-1)
+# init.fn<- function (chain_id) {
+#   list(beta = c(-2.5,init.beta))
+# }
+# 
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=18000, cores=3,iter=21000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("3geo+lat2.rds") #new model with hot coding.
+
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+
+mod.add <- mod
+loo.mod.add <- loo.mod
+```
+```{r, calculate values}
+#beta.names = dimnames(model.matrix(~Region + Antarctic + S.Middle + Tropics + N.Middle + Arctic, data=data.use))
+#cats <- c("Africa", "Asia", "New Zealand/Australia", "Europe", "Oceans", "North America", "South America", "Global", "Antarctic", "S. Middle", "Tropics", "N. Middle", "Arctic")
+#Calculate estimates; ix
+posterior=as.data.frame(mod.add); 
+
+#absolute risks
+Africa.Tr<-posterior[["beta[1]"]]
+Africa.N.Mid<-posterior[["beta[1]"]]+posterior[["beta[2]"]]
+Africa.S.Mid<-posterior[["beta[1]"]]+posterior[["beta[3]"]]
+Asia.N.Mid<-posterior[["beta[1]"]]+posterior[["beta[4]"]]
+Asia.Tr<-posterior[["beta[1]"]]+posterior[["beta[5]"]]
+Asia.Arct<-NA #base + Asia + Arctic no studies
+Aus.NZ.Tr<-posterior[["beta[1]"]]+posterior[["beta[6]"]]
+Aus.NZ.S.Mid<-posterior[["beta[1]"]]+posterior[["beta[7]"]]
+Euro.N.Mid<-posterior[["beta[1]"]]+posterior[["beta[8]"]]
+Euro.Arct<-posterior[["beta[1]"]]+posterior[["beta[9]"]]  
+N.Am.N.Mid<-posterior[["beta[1]"]]+posterior[["beta[10]"]]
+N.Am.Arct<-posterior[["beta[1]"]]+posterior[["beta[11]"]]
+N.Am.Tr<-posterior[["beta[1]"]]+posterior[["beta[12]"]]
+S.Am.S.Mid<-posterior[["beta[1]"]]+posterior[["beta[13]"]]
+S.Am.Tr<-posterior[["beta[1]"]]+posterior[["beta[14]"]]
+
+cats <- c("N. Middle Africa","Tropical Africa", "Middle Africa","Tropical Asia","N. Middle Asia","Arctic Asia","Middle Europe","Arctic Europe","Arctic N. America","Middle N. America","Tropical N. America", "Middle S. America","Tropical S. America","Tropical Australia/New Zealand", "Middle Australia/New Zealand")
+beta.cat<-cbind(Africa.N.Mid,Africa.Tr,Africa.S.Mid,Asia.Tr,Asia.N.Mid,Asia.Arct,Euro.N.Mid,Euro.Arct,N.Am.Arct,N.Am.N.Mid,N.Am.Tr,S.Am.S.Mid,S.Am.Tr,Aus.NZ.Tr,Aus.NZ.S.Mid)
+
+#use common median threat
+load("2all_interc.rds")
+posterior2=as.data.frame(mod)
+grand.mean = posterior2[["mu"]]
+grand.mean.inv =invlogit(grand.mean)
+grand.mean.pred = quantile(grand.mean.inv,probs = c(0.025, 0.5, 0.975))
+grand.mean.pred
+
+#calculate median and credible intervals
+pred.cat = invlogit(apply(beta.cat, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.cat.df <- data.frame(x = cats,
+                          mean = pred.cat[2,],
+                          low = pred.cat[1,],
+                          hi = pred.cat[3,])
+
+#arrange in increasing order#
+pred.cat.df$cats = with (pred.cat.df, reorder(cats, mean)) 
+#pred.cat.df <- pred.cat.df[pred.cat.df$cats != "Oceans",] #remove Oceans, which is covered by habitat grouping now
+
+rbeta.cat = invlogit(beta.cat)-invlogit(grand.mean)
+rpred.cat = (apply(rbeta.cat, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+rpred.cat.df <- data.frame(x = cats,
+                          mean = rpred.cat[2,],
+                          low = rpred.cat[1,],
+                          hi = rpred.cat[3,])
+#Differences from zero
+glob.mean.over <- rep("n",nrow(rpred.cat.df))
+glob.mean.over[rpred.cat.df$mean > 0 & rpred.cat.df$low > 0] = "y"
+glob.mean.over[rpred.cat.df$mean < 0 & rpred.cat.df$hi < 0] = "y"
+rpred.cat.df$glob.mean.over <- glob.mean.over
+
+#arrange in increasing order#
+rpred.cat.df$cats = with (rpred.cat.df, reorder(cats, mean)) 
+
+pred.cat.df.r <- pred.cat.df[,1:4]
+pred.cat.df.r[,2:4] <- round((pred.cat.df.r[,2:4]), digits = 4)
+knitr::kable(pred.cat.df.r, caption = "Table 1: Extinction risk by subregion and difference from mean, with 95% credible intervals", format = "markdown", font = 5)
+```
+
+## Geography x latitude model
+Independent estimate for each continent x latitudinal band region
+
+```{r Interactive model}
+#create model matrix for coefficients
+betamat.0 <- model.matrix(~Region * (Antarctic + S.Middle + Tropics + N.Middle + Arctic), data=data.use) #relative to global mean 
+betamat <- betamat.0[,c(1:7,9:13,22,26,28,29,32,33,35,39,44,46)] #cut regions without a place (e.g., Arctic South America) cut Euro.NM because it exactly == Euro
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+
+# params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+# init.beta=rep(0,ncol(betamat)-1)
+# init.fn<- function (chain_id) {
+#   list(beta = c(-2.5,init.beta))
+# }
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=18000, cores=3,iter=21000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("3geoxlat3.rds") #fixes europe problem = Europe == Euro.NM
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+
+mod.int <- mod
+loo.mod.int <- loo.mod
+```
+
+```{r LOO table}
+#load continent analysis
+load("2geog5.rds")
+loo.mod.cont = loo.mod
+
+#load latitudinal band analyss
+load("2all_lat.rds")
+loo.mod.lat = loo.mod
+
+
+#load intercept model
+load("2all_interc.rds") #use full data (dataP) intercept only model for comparison
+
+table.data<-data.frame(
+  Model = c("Intercept model","Continent model","Latitude model","Additive model","Interaction model"),
+  LOOic = c(loo.mod$estimates[3],loo.mod.cont$estimates[3],loo.mod.lat$estimates[3],loo.mod.add$estimates[3],loo.mod.int$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod.cont$estimates[6],loo.mod.lat$estimates[6],loo.mod.add$estimates[6],loo.mod.int$estimates[6])
+)
+
+loo.diff = loo.mod.int$estimates[3] - loo.mod.add$estimates[3]; cat("Interaction model versus additive model =", loo.diff)
+print("                    ")
+loo.diff2 = loo.mod.int$estimates[3] - loo.mod$estimates[3]; cat("Interactive model versus intercept model =", loo.diff2)
+print("                    ")
+loo.diff3 = loo.mod.int$estimates[3] - loo.mod.cont$estimates[3]; cat("Interactive model versus continent model =", loo.diff3)
+print("                    ")
+loo.diff4 = loo.mod.int$estimates[3] - loo.mod.lat$estimates[3]; cat("Interactive model versus latitude model =", loo.diff4)
+
+knitr::kable(table.data, caption = "Table 1: Comparisons of LOOic for additive and interactive geographic models", format = "markdown")
+```
+
+# LOOIC results
+The LOOIC of the interactive model is the best model.
+
+```{r, calculate geo x lat values}
+betamat.0 <- model.matrix(~Region * (Antarctic + S.Middle + Tropics + N.Middle + Arctic), data=data.use) #relative to global mean 
+betamat <- betamat.0[,c(1:7,9:13,22,26,28,29,32,33,35,39,44,46)]
+beta.names = dimnames(betamat)
+            
+posterior=as.data.frame(mod.int); 
+
+#absolute risks
+Africa<-posterior[["beta[1]"]]
+Asia<-posterior[["beta[2]"]]
+Aus.NZ<-posterior[["beta[3]"]]
+Euro<-posterior[["beta[4]"]]
+Marine<-posterior[["beta[5]"]]
+N.Am<-posterior[["beta[6]"]]
+S.Am<-posterior[["beta[7]"]]
+#beta.8<-posterior[["beta[8]"]] global don't need
+Antarct<-posterior[["beta[8]"]]
+S.Mid<-posterior[["beta[9]"]]
+Tropics<-posterior[["beta[10]"]]
+N.Mid<-posterior[["beta[11]"]]
+Arctic<-posterior[["beta[12]"]]
+
+ANZ.SM <-posterior[["beta[13]"]]
+S.Am.SM <- posterior[["beta[14]"]]
+
+Asia.Tropics <- posterior[["beta[15]"]]
+ANZ.Tropics <- posterior[["beta[16]"]]
+N.Am.Tropics <- posterior[["beta[17]"]]
+S.Am.Tropics <- posterior[["beta[18]"]]
+
+Asia.NM <- posterior[["beta[19]"]]
+Euro.NM <- posterior[["beta[20]"]]
+N.Am.NM <- Euro #posterior[["beta[21]"]] Euro.NM == Euro
+
+Euro.Arctic <- posterior[["beta[21]"]]
+N.Am.Arctic <- posterior[["beta[22]"]]
+
+Africa.Tr<- Africa + Tropics
+Africa.S.Mid<- Africa + S.Mid
+Africa.N.Mid<- Africa + N.Mid
+
+Asia.Tr<- Africa + Asia + Tropics + Asia.Tropics
+Asia.N.Mid<- Africa + Asia + N.Mid + Asia.NM
+Asia.Arct<-NA #base + Asia + Arctic no studies
+
+Euro.N.Mid<- Africa + Euro + N.Mid +Euro.NM
+Euro.Arct<- Africa + Euro + Arctic + Euro.Arctic
+plot(Euro[1:500],Euro.NM[1:500])
+cor(Euro[1:500],Euro.Arct[1:500])
+invlogit(quantile(Euro.Arct, probs = c(0.025, 0.5, 0.975)))
+
+N.Am.Arct<- Africa + N.Am + Arctic + N.Am.Arctic
+N.Am.N.Mid<- Africa + N.Am + N.Mid + N.Am.NM
+N.Am.Tr<- Africa + N.Am + Tropics + N.Am.Tropics
+
+S.Am.S.Mid<- Africa + S.Am + S.Mid + S.Am.SM
+S.Am.Tr<- Africa + S.Am + Tropics + S.Am.Tropics
+
+Aus.NZ.Tr<- Africa + Aus.NZ + Tropics + ANZ.Tropics
+Aus.NZ.S.Mid<- Africa + Aus.NZ + S.Mid + ANZ.SM
+
+cats <- c("N. Middle Africa","Tropical Africa", "Middle Africa","Tropical Asia","N. Middle Asia","Arctic Asia","Middle Europe","Arctic Europe","Arctic N. America","Middle N. America","Tropical N. America", "Middle S. America","Tropical S. America","Tropical Australia/New Zealand", "Middle Australia/New Zealand")
+beta.cat<-cbind(Africa.N.Mid,Africa.Tr,Africa.S.Mid,Asia.Tr,Asia.N.Mid,Asia.Arct,Euro.N.Mid,Euro.Arct,N.Am.Arct,N.Am.N.Mid,N.Am.Tr,S.Am.S.Mid,S.Am.Tr,Aus.NZ.Tr,Aus.NZ.S.Mid)
+
+#use common median threat
+load("2all_interc.rds")
+posterior2=as.data.frame(mod)
+grand.mean = posterior2[["mu"]]
+grand.mean.inv =invlogit(grand.mean)
+grand.mean.pred = quantile(grand.mean.inv,probs = c(0.025, 0.5, 0.975))
+grand.mean.pred
+
+#calculate median and credible intervals
+pred.cat = invlogit(apply(beta.cat, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.cat.df <- data.frame(x = cats,
+                          mean = pred.cat[2,],
+                          low = pred.cat[1,],
+                          hi = pred.cat[3,])
+
+#arrange in increasing order#
+pred.cat.df$cats = with (pred.cat.df, reorder(cats, mean)) 
+#pred.cat.df <- pred.cat.df[pred.cat.df$cats != "Oceans",] #remove Oceans, which is covered by habitat grouping now
+
+rbeta.cat = invlogit(beta.cat)-invlogit(grand.mean)
+rpred.cat = (apply(rbeta.cat, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+rpred.cat.df <- data.frame(x = cats,
+                          mean = rpred.cat[2,],
+                          low = rpred.cat[1,],
+                          hi = rpred.cat[3,])
+#Differences from zero
+glob.mean.over <- rep("n",nrow(rpred.cat.df))
+glob.mean.over[rpred.cat.df$mean > 0 & rpred.cat.df$low > 0] = "y"
+glob.mean.over[rpred.cat.df$mean < 0 & rpred.cat.df$hi < 0] = "y"
+rpred.cat.df$glob.mean.over <- glob.mean.over
+
+#arrange in increasing order#
+rpred.cat.df$cats = with (rpred.cat.df, reorder(cats, mean)) 
+
+pred.cat.df.r <- pred.cat.df[,1:4]
+pred.cat.df.r[,2:4] <- round((pred.cat.df.r[,2:4]), digits = 4)
+knitr::kable(pred.cat.df.r, caption = "Table 2: Extinction risk by subregion and difference from mean, with 95% credible intervals", format = "markdown", font = 5)
+```
+
+
+```{r Fig 1: Geography, fig.cap = "Fig. 1. Predicted extinction risk based on region."}
+#calculate global mean
+g.mean = grand.mean.pred[2]
+
+#Figures
+Fig1a<-ggplot(data = pred.cat.df)+
+  geom_vline(xintercept=g.mean) +
+  geom_errorbar(aes(y = cats, xmin = low, xmax = hi), width = 0) +
+  geom_point(stat = "identity", aes(y = cats, x = mean), color = "#416788", size = 3, shape = 15) +
+  xlab("Pre-industrial rise \n in temperature (C)") + xlim(c(0,.6)) +
+  theme_classic()+
+  theme(axis.title.y = element_blank(),axis.title=element_text(size=14),axis.text = element_text(size=12))+
+  guides(size=F)
+Fig1a
+
+Fig1b<-ggplot(data = rpred.cat.df)+
+  geom_vline(xintercept=0) +
+  geom_errorbar(aes(y = cats, xmin = low, xmax = hi), width = 0) +
+  geom_point(stat = "identity", aes(y = cats, x = mean, color = glob.mean.over), size = 3, shape = 15) +
+  scale_color_manual(values=c('grey','#E98a15'))+
+  xlab("Percent difference \n from global mean") + xlim(c(-.1,.5)) +
+  theme_classic()+
+  theme(axis.title.y = element_blank(),axis.ticks.y = element_blank(),axis.line.y = element_blank(),axis.text.y = element_blank(),
+        axis.title=element_text(size=14),axis.text = element_text(size=12),legend.position = "none")+
+  guides(size=F) 
+Fig1b
+
+ggarrange(Fig1a, NULL, Fig1b, ncol=3, widths = c(4,.4, 2))
+
+ggsave("Metarisk2 region.png",width=6,height=5,unit="in",dpi="print")
+```
+Note: zero studies from Arctic Asia.
+
+```{r sample sizes}
+cats <- c("N. Middle Africa","Tropical Africa", "Middle Africa","Tropical Asia","N. Middle Asia","Arctic Asia","Middle Europe","Arctic Europe","Arctic N. America","Middle N. America","Tropical N. America", "Middle S. America","Tropical S. America","Tropical Australia/New Zealand", "Middle Australia/New Zealand")
+#catalog sample sizes
+N.0.st<-length(unique(dataP$Study[dataP$Region == "Africa" & dataP$N.Middle== "Y"]))
+N.0.mod<-length(dataP$Study[dataP$Region == "Africa" & dataP$N.Middle == "Y"])
+
+N.1.st<-length(unique(dataP$Study[dataP$Region == "Africa" & dataP$Tropics == "Y"]))
+N.1.mod<-length(dataP$Study[dataP$Region == "Africa" & dataP$Tropics == "Y"])
+
+N.2.st<-length(unique(dataP$Study[dataP$Region == "Africa" & dataP$S.Middle == "Y"]))
+N.2.mod<-length(dataP$Study[dataP$Region == "Africa" & dataP$S.Middle == "Y"])
+
+N.3.st<-length(unique(dataP$Study[dataP$Region == "Asia" & dataP$Tropics == "Y"]))
+N.3.mod<-length(dataP$Study[dataP$Region == "Asia" & dataP$Tropics == "Y"])
+
+N.4.st<-length(unique(dataP$Study[dataP$Region == "Asia" & dataP$N.Middle == "Y"]))
+N.4.mod<-length(dataP$Study[dataP$Region == "Asia" & dataP$N.Middle == "Y"])
+
+N.6.st<-length(unique(dataP$Study[dataP$Region == "Asia" & dataP$Arctic == "Y"]))
+N.6.mod<-length(dataP$Study[dataP$Region == "Asia" & dataP$Arctic == "Y"])
+
+N.7.st<-length(unique(dataP$Study[dataP$Region == "Europe" & dataP$N.Middle == "Y"]))
+N.7.mod<-length(dataP$Study[dataP$Region == "Europe" & dataP$N.Middle == "Y"])
+
+N.8.st<-length(unique(dataP$Study[dataP$Region == "Europe" & dataP$Arctic == "Y"]))
+N.8.mod<-length(dataP$Study[dataP$Region == "Europe" & dataP$Arctic == "Y"])
+
+N.9.st<-length(unique(dataP$Study[dataP$Region == "Namerica" & dataP$Arctic == "Y"]))
+N.9.mod<-length(dataP$Study[dataP$Region == "Namerica" & dataP$Arctic == "Y"])
+
+N.10.st<-length(unique(dataP$Study[dataP$Region == "Namerica" & dataP$N.Middle == "Y"]))
+N.10.mod<-length(dataP$Study[dataP$Region == "Namerica" & dataP$N.Middle == "Y"])
+
+N.11.st<-length(unique(dataP$Study[dataP$Region == "Namerica" & dataP$Tropics == "Y"]))
+N.11.mod<-length(dataP$Study[dataP$Region == "Namerica" & dataP$Tropics == "Y"])
+
+N.12.st<-length(unique(dataP$Study[dataP$Region == "Samerica" & dataP$S.Middle == "Y"]))
+N.12.mod<-length(dataP$Study[dataP$Region == "Samerica" & dataP$S.Middle == "Y"])
+
+N.13.st<-length(unique(dataP$Study[dataP$Region == "Samerica" & dataP$Tropics == "Y"]))
+N.13.mod<-length(dataP$Study[dataP$Region == "Samerica" & dataP$Tropics == "Y"])
+
+N.14.st<-length(unique(dataP$Study[dataP$Region == "AustraliaNewZealand" & dataP$Tropics == "Y"]))
+N.14.mod<-length(dataP$Study[dataP$Region == "AustraliaNewZealand" & dataP$Tropics == "Y"])
+
+N.15.st<-length(unique(dataP$Study[dataP$Region == "AustraliaNewZealand" & dataP$S.Middle == "Y"]))
+N.15.mod<-length(dataP$Study[dataP$Region == "AustraliaNewZealand" & dataP$S.Middle == "Y"])
+
+
+table.data<-data.frame(
+  Factor = cats,
+  Studies = c(N.0.st,N.1.st,N.2.st,N.3.st,N.4.st,N.6.st,N.7.st,N.8.st,N.9.st,N.10.st,N.11.st,N.12.st,N.13.st,N.14.st,N.15.st),
+  Models = c(N.0.mod,N.1.mod,N.2.mod,N.3.mod,N.4.mod,N.6.mod,N.7.mod,N.8.mod,N.9.mod,N.10.mod,N.11.mod,N.12.mod,N.13.mod,N.14.mod,N.15.mod)
+)
+knitr::kable(table.data, caption = "Table 3: Number of studies and models for each factor", format = "markdown")
+```
+
+## Create Fig.2
+
+### Pick map colors
+
+```{r, pick map colors}
+#Create color pallete
+library(colorspace)
+#hcl_palettes(plot = TRUE)
+ext.risk = seq(0.0,0.40,0.005)
+#choose_palette()
+colors <- sequential_hcl(length(ext.risk), palette = "Lajolla")
+map.colors <- data.frame("Ext.risk" = ext.risk,
+                         "colors" = colors)
+color.ramp <- (map.colors$colors[c(1,11,21,31,41,51)])
+#findest nearest color
+find_nearest_id <- function(id) {
+  nearest_index <- which.min(abs(map.colors$Ext.risk - id))
+  return(map.colors$Ext.risk[nearest_index])
+}
+
+#find nearest ext risk value
+pred.cat.df$color.id <- as.numeric(sapply(pred.cat.df$mean, find_nearest_id))
+pred.cat.df$color.id[pred.cat.df$x == "Arctic Asia"] = "NA"
+
+#merge based on nearest value
+pred.cat.df.merge <- merge(pred.cat.df, map.colors, by.x = "color.id", by.y = "Ext.risk")
+
+col.table<-data.frame(
+  Factor = pred.cat.df.merge$cats,
+  Colors = pred.cat.df.merge$colors
+)
+knitr::kable(col.table, caption = "Table 4: Colors for each region", format = "markdown",color = "white")
+```
+
+
+```{r, make Fig. 2,warning=FALSE}
+# Download world shapefile
+# 
+coast <- ne_coastline(scale = 110, returnclass = "sf")
+world <- ne_download(scale = 10,category = "physical", type = "geography_regions_polys", returnclass = "sf") #category = "cultural", type = "countries", type = "land",
+africa <- world[world$NAME == "AFRICA" | world$NAME == "MADAGASCAR",]
+europe <- world[world$NAME == "EUROPE" | world$NAME == "ICELAND"| world$NAME == "IRELAND" | world$NAME == "GREAT BRITAIN",]
+asia <- world[world$NAME == "ASIA" | world$NAME == "SRI LANKA"| world$NAME == "BORNEO"| world$NAME == "SUMATRA"| world$NAME == "NEW GUINEA",]
+# #asia <- world[world$REGION == "ASIA"]
+N.Am <- world[world$NAME == "NORTH AMERICA" | world$NAME == "CENTRAL AMERICA"  ,]
+S.Am <- world[world$NAME == "SOUTH AMERICA",]
+#New.Aus <- world[world$NAME == "AUSTRALIA" | world$NAME == "NEW ZEALAND",] #Include Russia in Asia
+New.Aus <- ne_countries(scale = 110, country = c("Australia", "New Zealand"), returnclass = "sf")
+Ant <- world[world$NAME == "ANTARCTICA",]
+
+asia2 <- ne_countries(scale = 110, continent = "Asia", returnclass = "sf")
+euro2 <- ne_countries(scale = 110, continent = "Europe", returnclass = "sf")
+NM2 <- ne_countries(scale = 110, continent = "North America", returnclass = "sf")
+
+# Define latitudinal bounds
+tropic.box <- c(-180, -23.44, 180, 23.44)  # Adjust these values based on your desired bounding box
+N.mid.box <- c(-180, 23.44, 180, 66.55)  # Adjust these values based on your desired bounding box
+Arc.box <- c(-180, 66.55, 180, 90)  # Adjust these values based on your desired bounding box
+S.mid.box <- c(-180, -23.44, 180, -66.55)  # Adjust these values based on your desired bounding box
+AntArc.box <- c(-180, -66.55, 180, -90)  # Adjust these values based on your desired bounding box
+
+# Crop to the bounding box
+sf::sf_use_s2(FALSE)
+
+#Crop out lat/continent polygons
+africa.tropic <- st_crop(africa, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+africa.S.mid <- st_crop(africa, xmin = S.mid.box[1], ymin = S.mid.box[2], xmax = S.mid.box[3], ymax = S.mid.box[4])
+africa.N.mid <- st_crop(africa, xmin = N.mid.box[1], ymin = N.mid.box[2], xmax = N.mid.box[3], ymax = N.mid.box[4])
+
+euro.N.mid <- st_crop(europe, xmin = N.mid.box[1], ymin = N.mid.box[2], xmax = N.mid.box[3], ymax = N.mid.box[4])
+euro.Arc <- st_crop(europe, xmin = Arc.box[1], ymin = Arc.box[2], xmax = Arc.box[3], ymax = Arc.box[4])
+euro.Arc2 <- st_crop(euro2, xmin = Arc.box[1], ymin = Arc.box[2], xmax = Arc.box[3], ymax = Arc.box[4])
+
+asia.tropic <- st_crop(asia, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+asia.N.mid <- st_crop(asia, xmin = N.mid.box[1], ymin = N.mid.box[2], xmax = N.mid.box[3], ymax = N.mid.box[4])
+asia.Arc <- st_crop(asia, xmin = Arc.box[1], ymin = Arc.box[2], xmax = Arc.box[3], ymax = Arc.box[4])
+
+asia2.tropic <- st_crop(asia2, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+asia2.N.mid <- st_crop(asia2, xmin = N.mid.box[1], ymin = N.mid.box[2], xmax = N.mid.box[3], ymax = N.mid.box[4])
+asia2.Arc <- st_crop(asia2, xmin = Arc.box[1], ymin = Arc.box[2], xmax = Arc.box[3], ymax = Arc.box[4])
+
+N.Am.tropic <- st_crop(N.Am, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+N.Am.tropic2 <- st_crop(NM2, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+N.Am.Arc <- st_crop(N.Am, xmin = Arc.box[1], ymin = Arc.box[2], xmax = Arc.box[3], ymax = Arc.box[4])
+N.Am.N.mid <- st_crop(N.Am, xmin = N.mid.box[1], ymin = N.mid.box[2], xmax = N.mid.box[3], ymax = N.mid.box[4])
+
+S.Am.tropic <- st_crop(S.Am, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+S.Am.S.mid <- st_crop(S.Am, xmin = S.mid.box[1], ymin = S.mid.box[2], xmax = S.mid.box[3], ymax = S.mid.box[4])
+
+New.Aus.tropic <- st_crop(New.Aus, xmin = tropic.box[1], ymin = tropic.box[2], xmax = tropic.box[3], ymax = tropic.box[4])
+New.Aus.S.mid <- st_crop(New.Aus, xmin = S.mid.box[1], ymin = S.mid.box[2], xmax = S.mid.box[3], ymax = S.mid.box[4])
+
+Ant.ant <- st_crop(Ant, xmin = AntArc.box[1], ymin = AntArc.box[2], xmax = AntArc.box[3], ymax = AntArc.box[4])
+
+# Display the cropped map using ggplot2
+Fig2 <- ggplot() + 
+    geom_sf(data = N.Am.tropic, aes(fill = color.ramp[6]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = color.ramp[5]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = color.ramp[4]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = color.ramp[3]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = color.ramp[2]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = color.ramp[1]), color = NA) +
+  geom_sf(data = N.Am.tropic, aes(fill = "lightgray"), color = NA) +
+  geom_sf(data = N.Am.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical N. America"], color = "NA") +
+  geom_sf(data = N.Am.tropic2, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical N. America"], color = "NA") +
+  geom_sf(data = euro.Arc2, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Arctic Europe"], color = "NA") +
+  geom_sf(data = euro.Arc, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Arctic Europe"], color = "NA") +
+  geom_sf(data = euro.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Middle Europe"], color = "NA") +
+  geom_sf(data = asia.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "N. Middle Asia"], color = "NA") +
+  geom_sf(data = africa.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical Africa"], color = "NA") +
+  geom_sf(data = africa.S.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Middle Africa"], color = "NA") +
+  geom_sf(data = africa.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "N. Middle Africa"], color = "NA") +
+  geom_sf(data = asia.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical Asia"], color = "NA") +
+  geom_sf(data = asia2.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical Asia"], color = "NA") +
+  geom_sf(data = asia.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "N. Middle Asia"], color = "NA") +
+  geom_sf(data = asia2.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "N. Middle Asia"], color = "NA") +
+  geom_sf(data = N.Am.Arc, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Arctic N. America"], color = "NA") +
+  geom_sf(data = N.Am.N.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Middle N. America"], color = "NA") +
+  geom_sf(data = S.Am.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical S. America"], color = "NA") +
+  geom_sf(data = S.Am.S.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Middle S. America"], color = "NA") +
+  geom_sf(data = New.Aus.tropic, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Tropical Australia/New Zealand"], color = "NA") +
+  geom_sf(data = New.Aus.S.mid, fill = pred.cat.df.merge$colors[pred.cat.df.merge$cats == "Middle Australia/New Zealand"], color = "NA") +  
+  geom_sf(data = asia.Arc, fill = "lightgray", color = "NA")+
+  geom_sf(data = Ant.ant, fill = "lightgray", color = "NA") +
+  #geom_sf(data = coast, color = "darkgray") +
+  ylim(-80,85) + scale_y_continuous(breaks = c(-66.55, -23.44, 0, 23.44, 66.55)) +
+  scale_fill_identity(guide = "legend",name ="Exinction risk",labels =c("25%","20%","15%","10%","5%","0%","No data")) +
+  theme(panel.background = element_rect(fill = "#D7E5EA"),legend.position = "bottom",legend.text = element_text(size=10),legend.margin=margin(),legend.direction = "horizontal",plot.margin = margin(t = 0,  # Top margin
+                             r = 0,  # Right margin
+                             b = 0,  # Bottom margin
+                             l = 0)) + # Left margin) + ) +
+  guides(fill = guide_legend(nrow = 1, reverse = TRUE)) #b7d1da 
+Fig2
+
+
+#ggsave("Fig2xb overall.png",width=8,height=6,unit="in",dpi=3600)
+#ggsave("Fig2xc overall.eps",width=8,height=6,unit="in",dpi=2400)
+```
+
+## Variation explained
+
+```{r, var explained 1, warnings = FALSE}
+#After Gelman 2019 R2 for Bayesian
+#
+#Load model and beta matrix - check if mu is modeled separately
+load("2geog5.rds")
+posterior=as.data.frame(mod); 
+betamat <- (model.matrix(~Region,data=data.use, contrasts.arg=list(Region="contr.sum")))
+
+#posterior=as.data.frame(mod.int); 
+#betamat = as.matrix(rep(1,9000))
+
+#Variables and matrices
+S = 9000; #samples
+K = ncol(betamat); #factors
+p.mat <- as.matrix(posterior[,1:K])
+y = dataP$percent2 
+y.mat = t(matrix(rep(y,S), nrow = N, ncol = S))
+y.mean <- mean(y)
+
+#Calculate y.pred for fixed effects only
+y.pred <- matrix(rep(NA, N*S), nrow = S, ncol = N)
+theta <- y.pred
+for (i in 1:N) {
+      theta[,i] = invlogit(p.mat %*% betamat[i,])#rows = samples, cols = i
+      y.pred[,i] = (theta[,i] * data.use$Total.N[i])/(theta[,i] * data.use$Total.N[i] + (1-theta[,i]) * data.use$Total.N[i])
+}
+
+#Calcluate residual variance
+res.f = y.mat - y.pred    
+RSS.f = rowSums((res.f)^2)
+res.v.f = 1/(N -1) * RSS.f
+
+#Calculate fit variance
+pred.v.f = 1/(N-1) * rowSums((y.pred)^2)
+
+#Calculate R2
+R2.v.f = pred.v.f/(pred.v.f + res.v.f)
+cat("fixed effects R2 = ", quantile(R2.v.f,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+#Total model With random effects
+y.pred.c <-(as.matrix(posterior[,(K+1):(N+K)])) #calculated in STAN, with all RE and weightings
+
+#Calculate residual variance
+res.c = y.mat - y.pred.c    
+RSS.c = rowSums((res.c)^2)
+res.v.c = 1/(N-1) * RSS.c
+
+#Calculate fit variance
+
+pred.v.c = 1/(N-1) * rowSums(y.pred.c^2)
+
+#Calculate full model R2
+R2.v.c = pred.v.c/(pred.v.c + res.v.c)
+print("                                                   ")
+cat("Overall model R2 = ", quantile(R2.v.c,probs = c(0.025, 0.5, 0.975),na.rm = T))
+```
+```{r, var explained 2, warnings = F}
+#After Gelman 2019 R2 for Bayesian
+#
+#Load model and beta matrix - check if mu is modeled separately
+load("2all_lat.rds")
+posterior=as.data.frame(mod); 
+betamat <- (model.matrix(~Antarctic + S.Middle + Tropics + N.Middle + Arctic, data=data.use, 
+                          contrasts.arg=list(Antarctic = "contr.sum", S.Middle = "contr.sum", Tropics="contr.sum", N.Middle = "contr.sum", Arctic = "contr.sum")))
+
+#posterior=as.data.frame(mod.int); 
+#betamat = as.matrix(rep(1,9000))
+
+#Variables and matrices
+S = 9000; #samples
+K = ncol(betamat); #factors
+p.mat <- as.matrix(posterior[,1:K])
+y = dataP$percent2 
+y.mat = t(matrix(rep(y,S), nrow = N, ncol = S))
+y.mean <- mean(y)
+
+#Calculate y.pred for fixed effects only
+y.pred <- matrix(rep(NA, N*S), nrow = S, ncol = N)
+theta <- y.pred
+for (i in 1:N) {
+      theta[,i] = invlogit(p.mat %*% betamat[i,])#rows = samples, cols = i
+      y.pred[,i] = (theta[,i] * data.use$Total.N[i])/(theta[,i] * data.use$Total.N[i] + (1-theta[,i]) * data.use$Total.N[i])
+}
+
+#Calcluate residual variance
+res.f = y.mat - y.pred    
+RSS.f = rowSums((res.f)^2)
+res.v.f = 1/(N -1) * RSS.f
+
+#Calculate fit variance
+pred.v.f = 1/(N-1) * rowSums((y.pred)^2)
+
+#Calculate R2
+R2.v.f = pred.v.f/(pred.v.f + res.v.f)
+cat("fixed effects R2 = ", quantile(R2.v.f,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+#Total model With random effects
+y.pred.c <-(as.matrix(posterior[,(K+1):(N+K)])) #calculated in STAN, with all RE and weightings
+
+#Calculate residual variance
+res.c = y.mat - y.pred.c    
+RSS.c = rowSums((res.c)^2)
+res.v.c = 1/(N-1) * RSS.c
+
+#Calculate fit variance
+
+pred.v.c = 1/(N-1) * rowSums(y.pred.c^2)
+
+#Calculate full model R2
+R2.v.c = pred.v.c/(pred.v.c + res.v.c)
+print("                                                   ")
+cat("Overall model R2 = ", quantile(R2.v.c,probs = c(0.025, 0.5, 0.975),na.rm = T))
+```
+
+
+```{r, var explained 3, warnings = FALSE}
+#After Gelman 2019 R2 for Bayesian
+#
+#Load model and beta matrix - check if mu is modeled separately
+#load("2geo+lat.rds")
+load("3geoxlat3.rds")
+posterior=as.data.frame(mod); 
+#betamat <- model.matrix(~Region + Antarctic + S.Middle + Tropics + N.Middle + Arctic, data=data.use) 
+betamat.0 <- model.matrix(~Region * (Antarctic + S.Middle + Tropics + N.Middle + Arctic), data=data.use) #relative to global mean 
+betamat <- betamat.0[,c(1:7,9:13,22,26,28,29,32,33,35,39,44,46)]
+
+#posterior=as.data.frame(mod.int); 
+#betamat = as.matrix(rep(1,9000))
+
+#Variables and matrices
+S = 9000; #samples
+K = ncol(betamat); #factors
+p.mat <- as.matrix(posterior[,1:K])
+y = dataP$percent2 
+y.mat = t(matrix(rep(y,S), nrow = N, ncol = S))
+y.mean <- mean(y)
+
+#Calculate y.pred for fixed effects only
+y.pred <- matrix(rep(NA, N*S), nrow = S, ncol = N)
+theta <- y.pred
+for (i in 1:N) {
+      theta[,i] = invlogit(p.mat %*% betamat[i,])#rows = samples, cols = i
+      y.pred[,i] = (theta[,i] * data.use$Total.N[i])/(theta[,i] * data.use$Total.N[i] + (1-theta[,i]) * data.use$Total.N[i])
+}
+
+#Calcluate residual variance
+res.f = y.mat - y.pred    
+RSS.f = rowSums((res.f)^2)
+res.v.f = 1/(N -1) * RSS.f
+
+#Calculate fit variance
+pred.v.f = 1/(N-1) * rowSums((y.pred)^2)
+
+#Calculate R2
+R2.v.f = pred.v.f/(pred.v.f + res.v.f)
+cat("fixed effects R2 = ", quantile(R2.v.f,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+#Total model With random effects
+y.pred.c <-(as.matrix(posterior[,(K+1):(N+K)])) #calculated in STAN, with all RE and weightings
+
+#Calculate residual variance
+res.c = y.mat - y.pred.c    
+RSS.c = rowSums((res.c)^2)
+res.v.c = 1/(N-1) * RSS.c
+
+#Calculate fit variance
+
+pred.v.c = 1/(N-1) * rowSums(y.pred.c^2)
+
+#Calculate full model R2
+R2.v.c = pred.v.c/(pred.v.c + res.v.c)
+print("                                                   ")
+cat("Overall model R2 = ", quantile(R2.v.c,probs = c(0.025, 0.5, 0.975),na.rm = T))
+```
