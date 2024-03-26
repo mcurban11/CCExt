@@ -1,0 +1,42 @@
+assessmentId,internalTaxonId,scientificName,kingdomName,phylumName,orderName,className,familyName,genusName,speciesName,infraType,infraName,infraAuthority,authority,redlistCategory,redlistCriteria,criteriaVersion,populationTrend,scopes
+1998432,191696,Allotoca goslinei,ANIMALIA,CHORDATA,CYPRINODONTIFORMES,ACTINOPTERYGII,GOODEIDAE,Allotoca,goslinei,,,,"Smith &amp; Miller, 1987",Extinct in the Wild,,3.1,,Global
+2594210,199495,Margatteoidea amoena,ANIMALIA,ARTHROPODA,BLATTODEA,INSECTA,BLATTELLIDAE,Margatteoidea,amoena,,,,"(Bolivar, 1924)",Extinct,,3.1,Unknown,Global
+2706821,201484,Orthomorpha crinita,ANIMALIA,ARTHROPODA,POLYDESMIDA,DIPLOPODA,PARADOXOSOMATIDAE,Orthomorpha,crinita,,,,"Attems, 1900",Extinct,,3.1,,Global
+8286338,184524,Pseudamnicola desertorum,ANIMALIA,MOLLUSCA,LITTORINIMORPHA,GASTROPODA,HYDROBIIDAE,Pseudamnicola,desertorum,,,,"(Bourguignat, 1862)",Extinct,,3.1,,"Global, Northern Africa & Pan-Africa"
+10304648,40091,Pachnodus velutinus,ANIMALIA,MOLLUSCA,STYLOMMATOPHORA,GASTROPODA,CERASTIDAE,Pachnodus,velutinus,,,,"(Pfeiffer, 1841)",Extinct,,3.1,,Global
+10390353,41027,Graecoanatolica macedonica,ANIMALIA,MOLLUSCA,LITTORINIMORPHA,GASTROPODA,HYDROBIIDAE,Graecoanatolica,macedonica,,,,"Radoman &amp; Stanovic, 1978",Extinct,,3.1,,"Global, Europe & Mediterranean"
+12460739,61394,Telestes ukliva,ANIMALIA,CHORDATA,CYPRINIFORMES,ACTINOPTERYGII,LEUCISCIDAE,Telestes,ukliva,,,,"(Heckel, 1843)",Extinct,,3.1,,Global & Europe
+12468486,61365,Tristramella magdelainae,ANIMALIA,CHORDATA,PERCIFORMES,ACTINOPTERYGII,CICHLIDAE,Tristramella,magdelainae,,,,"(Lortet, 1883)",Extinct,,3.1,,Global
+15361621,5438,Cottus echinatus,ANIMALIA,CHORDATA,SCORPAENIFORMES,ACTINOPTERYGII,COTTIDAE,Cottus,echinatus,,,,"Bailey &amp; Bond, 1963",Extinct,,3.1,,Global
+21424454,22147,Trigonoscuta rossi,ANIMALIA,ARTHROPODA,COLEOPTERA,INSECTA,CURCULIONIDAE,Trigonoscuta,rossi,,,,"Pierce, 1975",Extinct,,3.1,,Global
+22186735,9003,Geocapromys thoracatus,ANIMALIA,CHORDATA,RODENTIA,MAMMALIA,CAPROMYIDAE,Geocapromys,thoracatus,,,,"(True, 1888)",Extinct,,3.1,,Global
+50188573,10168,Hippotragus leucophaeus,ANIMALIA,CHORDATA,ARTIODACTYLA,MAMMALIA,BOVIDAE,Hippotragus,leucophaeus,,,,"(Pallas, 1766)",Extinct,,3.1,,Global
+54357699,3172,Incilius periglenes,ANIMALIA,CHORDATA,ANURA,AMPHIBIA,BUFONIDAE,Incilius,periglenes,,,,"(Savage, 1967)",Extinct,,3.1,,Global
+54358350,54549,Atelopus senex,ANIMALIA,CHORDATA,ANURA,AMPHIBIA,BUFONIDAE,Atelopus,senex,,,,"Taylor, 1952",Extinct,,3.1,,Global
+54365740,56413,Craugastor anciano,ANIMALIA,CHORDATA,ANURA,AMPHIBIA,CRAUGASTORIDAE,Craugastor,anciano,,,,"(Savage, McCranie &amp; Wilson, 1988)",Extinct,,3.1,,Global
+54369525,56810,Craugastor omoaensis,ANIMALIA,CHORDATA,ANURA,AMPHIBIA,CRAUGASTORIDAE,Craugastor,omoaensis,,,,"(McCranie &amp; Wilson, 1997)",Extinct,,3.1,,Global
+79862750,34039,Delissea niihauensis,PLANTAE,TRACHEOPHYTA,ASTERALES,MAGNOLIOPSIDA,CAMPANULACEAE,Delissea,niihauensis,,,,H.St.John,Extinct,,3.1,,Global
+82337485,82337482,Dusicyon avus,ANIMALIA,CHORDATA,CARNIVORA,MAMMALIA,CANIDAE,Dusicyon,avus,,,,"(Burmeister, 1866)",Extinct,,3.1,,Global
+83790763,44094,Cyanea dolichopoda,PLANTAE,TRACHEOPHYTA,ASTERALES,MAGNOLIOPSIDA,CAMPANULACEAE,Cyanea,dolichopoda,,,,Lammers &amp; Lorence,Extinct,,3.1,,Global
+94165256,22708559,Myadestes myadestinus,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,TURDIDAE,Myadestes,myadestinus,,,,"(Stejneger, 1887)",Extinct,,3.1,,Global
+94263439,22710840,Fregilupus varius,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,STURNIDAE,Fregilupus,varius,,,,"(Boddaert, 1783)",Extinct,,3.1,,Global
+96986338,96986314,Bradycellus chavesi,ANIMALIA,ARTHROPODA,COLEOPTERA,INSECTA,CARABIDAE,Bradycellus,chavesi,,,,"Alluaud, 1919",Extinct,,3.1,,Global
+99166654,97161884,Neocnemis occidentalis,ANIMALIA,ARTHROPODA,COLEOPTERA,INSECTA,CURCULIONIDAE,Neocnemis,occidentalis,,,,"Crotch, 1867",Extinct,,3.1,,Global
+115496789,78777637,Cyanea sessilifolia,PLANTAE,TRACHEOPHYTA,ASTERALES,MAGNOLIOPSIDA,CAMPANULACEAE,Cyanea,sessilifolia,,,,(O.Deg.) Lammers,Extinct,,3.1,,Global
+118976576,54583,Anaxyrus baxteri,ANIMALIA,CHORDATA,ANURA,AMPHIBIA,BUFONIDAE,Anaxyrus,baxteri,,,,"(Porter, 1964)",Extinct in the Wild,,3.1,,Global
+119549725,103823212,Akialoa ellisiana,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,FRINGILLIDAE,Akialoa,ellisiana,,,,(Gray 1860),Extinct,,3.1,,Global
+119549974,103823431,Akialoa lanaiensis,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,FRINGILLIDAE,Akialoa,lanaiensis,,,,"(Rothschild, 1893)",Extinct,,3.1,,Global
+119550506,103823250,Akialoa stejnegeri,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,FRINGILLIDAE,Akialoa,stejnegeri,,,,"(Wilson, 1889)",Extinct,,3.1,,Global
+126613386,126612397,Deppea splendens,PLANTAE,TRACHEOPHYTA,GENTIANALES,MAGNOLIOPSIDA,RUBIACEAE,Deppea,splendens,,,,Breedlove &amp; Lorence,Extinct in the Wild,,3.1,,Global
+126613426,126612753,Faramea chiapensis,PLANTAE,TRACHEOPHYTA,GENTIANALES,MAGNOLIOPSIDA,RUBIACEAE,Faramea,chiapensis,,,,Borhidi,Extinct,,3.1,,Global
+140416594,140416589,Eriocaulon inundatum,PLANTAE,TRACHEOPHYTA,POALES,LILIOPSIDA,ERIOCAULACEAE,Eriocaulon,inundatum,,,,Moldenke,Extinct,,3.1,,Global
+164117292,164111324,Dombeya rodriguesiana,PLANTAE,TRACHEOPHYTA,MALVALES,MAGNOLIOPSIDA,MALVACEAE,Dombeya,rodriguesiana,,,,F.Friedmann,Extinct in the Wild,,3.1,,Global
+184207893,44080,Brighamia insignis,PLANTAE,TRACHEOPHYTA,ASTERALES,MAGNOLIOPSIDA,CAMPANULACEAE,Brighamia,insignis,,,,A.Gray,Extinct in the Wild,,3.1,,Global
+195439637,13132,Melomys rubicola,ANIMALIA,CHORDATA,RODENTIA,MAMMALIA,MURIDAE,Melomys,rubicola,,,,"Thomas, 1924",Extinct,,3.1,,Global
+216881879,216881863,Govenia floridana,PLANTAE,TRACHEOPHYTA,ASPARAGALES,LILIOPSIDA,ORCHIDACEAE,Govenia,floridana,,,,P.M.Br.,Extinct,,3.1,,Global
+217783334,13152363,Chioninia coctei,ANIMALIA,CHORDATA,SQUAMATA,REPTILIA,SCINCIDAE,Chioninia,coctei,,,,"(Duméril &amp; Bibron, 1839)",Extinct,,3.1,,Global
+229310288,22692447,Hypotaenidia wakensis,ANIMALIA,CHORDATA,GRUIFORMES,AVES,RALLIDAE,Hypotaenidia,wakensis,,,,"Rothschild, 1903",Extinct,,3.1,,Global
+229347436,22692672,Zapornia palmeri,ANIMALIA,CHORDATA,GRUIFORMES,AVES,RALLIDAE,Zapornia,palmeri,,,,"(Frohawk, 1892)",Extinct,,3.1,,Global
+231051969,103889155,Zosterops conspicillatus,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,ZOSTEROPIDAE,Zosterops,conspicillatus,,,,"(Kittlitz, 1832)",Extinct,,3.1,,Global
+235578991,22708835,Turdus ravidus,ANIMALIA,CHORDATA,PASSERIFORMES,AVES,TURDIDAE,Turdus,ravidus,,,,"(Cory, 1886)",Extinct,,3.1,,Global
+238869019,22685156,Psephotellus pulcherrimus,ANIMALIA,CHORDATA,PSITTACIFORMES,AVES,PSITTACIDAE,Psephotellus,pulcherrimus,,,,"(Gould, 1845)",Extinct,,3.1,,Global
