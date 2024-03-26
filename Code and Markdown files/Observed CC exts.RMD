@@ -1,0 +1,161 @@
+---
+title: "Extinction risk from climate change: Recent extinctions"
+output: word_document
+date: "March 25, 2024"
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE) 
+```
+## Load libraries and data
+<br>
+<br>
+```{r load libraries and data, message = FALSE}
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/extinction list"
+
+# load libraries
+library(dplyr); library(ggplot2); library(ggpubr); library(rstanarm)
+ 
+## load data
+# Load just IUCN extinction risk attributed to weather or climate change
+CC.ext <- read.csv("CC IUCN ext risk.csv",header=T, fill = T); 
+
+# Load all extinct taxa
+all.ext <- read.csv("IUCN ext data.csv",header=T, fill = T); #,colClasses="character",colClasses="character"
+
+# Load temp anomalies https://www.ncei.noaa.gov/access/monitoring/global-temperature-anomalies/anomalies
+global.temps <- read.table("Temp anomalies.txt", header = T)
+
+# when to start looking for CC
+Year.threshold = 1960
+```
+## Refine temperature data
+<br>
+<br>
+```{r, Refine temp data}
+# Correct and refine temp dataset
+global.temps$Anomaly.C <- global.temps$Anomaly - mean(global.temps$Anomaly[global.temps$Year < 1901]) #IPCC uses 1850-1900 as baseline so correct.
+global.temps.sub <- global.temps[global.temps$Year > Year.threshold,]
+global.temps.sub$position <- ifelse(global.temps.sub$Anomaly.C > 0, "up","down")
+```
+
+## Refine extinction list
+<br>
+<br>
+```{r, create CC extinction risk data}
+# Create new column in all extinction dataset for those attributed to weather/CC and form reduced dataset CC.ext.2
+cc.ext.id <- all.ext$scientificName %in% CC.ext$scientificName
+all.ext$CC.ext <- rep("N",nrow(all.ext))
+all.ext$CC.ext[cc.ext.id] = "Y"
+sum(all.ext$CC.ext == "Y")
+CC.ext.2 <- all.ext[all.ext$CC.ext == "Y",]
+hist(as.numeric(CC.ext.2$yearLastSeen2))
+
+# Further refine the dataset to when CC was evident in threshold year
+CC.ext.contera <- CC.ext.2[CC.ext.2$yearLastSeen2 > Year.threshold,] 
+#write.csv(CC.ext.contera, file = "CC ext.csv")
+cat("starting number of extinctions =", nrow(CC.ext.contera))
+
+# Further refine list to exclude these species based on assessment and literature review
+CC.ext.contera <- CC.ext.contera[CC.ext.contera$scientificName != "Telestes ukliva",] # Invasive fish species is only threat indicated
+CC.ext.contera <- CC.ext.contera[CC.ext.contera$scientificName != "Dombeya rodriguesiana",] # over exploitation and overgrazing listed; no climate change
+CC.ext.contera <- CC.ext.contera[CC.ext.contera$scientificName != "Zosterops conspicillatus",] # invasive species and super typhoon, but typhoon in 76 so unlikely to 
+CC.ext.contera <- CC.ext.contera[CC.ext.contera$scientificName != "Govenia floridana",] # poaching by collectors; hurricane in 1960 noted, but likely before CC effect
+
+#Add species based on new or external literature review
+CC.ext.contera[nrow(CC.ext.contera)+1,] <- all.ext[all.ext$scientificName == "Moho braccatus",]
+CC.ext.contera[nrow(CC.ext.contera)+1,] <- all.ext[all.ext$scientificName == "Zosterops conspicillatus",]
+CC.ext.contera[nrow(CC.ext.contera)+1,] <- all.ext[all.ext$scientificName == "Melamprosops phaeosoma",]
+CC.ext.contera[nrow(CC.ext.contera)+1,] <- all.ext[all.ext$scientificName == "Corvus hawaiiensis",]
+
+#Fix dates according to assessments
+CC.ext.contera$yearLastSeen[CC.ext.contera$scientificName == "Myadestes myadestinus"] = 1985
+CC.ext.contera$yearLastSeen[CC.ext.contera$scientificName == "Cyanea dolichopoda"] = 1990
+
+CC.ext.contera$yearLastSeen2 = as.numeric(CC.ext.contera$yearLastSeen) +1 #add one year as this is last year seen, so extinct next year?
+
+cat("refined number of extinctions =", nrow(CC.ext.contera))
+
+#all extinction subset for year threshold and eliminate NAs
+all.ext.sub <- all.ext[all.ext$yearLastSeen2 > Year.threshold & !is.na(all.ext$yearLastSeen2),] 
+all.ext.sub$yearLastSeen2 <- all.ext.sub$yearLastSeen2 +1
+
+hist(as.numeric(CC.ext.contera$yearLastSeen2), breaks = seq(Year.threshold-.5,2023.5,1))
+ext.counts <- hist(as.numeric(CC.ext.contera$yearLastSeen2), breaks = seq(Year.threshold-.5,2023.5,1))['counts']
+ext.counts5 <- hist(as.numeric(CC.ext.contera$yearLastSeen2), breaks = seq(Year.threshold-.5,2025.5,5))['counts']
+ext.counts10 <- hist(as.numeric(CC.ext.contera$yearLastSeen2), breaks = seq(Year.threshold-.5,2030.5,10))['counts']
+
+all.ext.counts <- hist(as.numeric(all.ext.sub$yearLastSeen2), breaks = seq(Year.threshold-.5,2023.5,1))['counts']
+all.ext.counts5 <- hist(as.numeric(all.ext.sub$yearLastSeen2), breaks = seq(Year.threshold-.5,2025.5,5))['counts']
+all.ext.counts10 <- hist(as.numeric(all.ext.sub$yearLastSeen2), breaks = seq(Year.threshold-.5,2030.5,10))['counts']
+
+prop.CC.exts5 <- ifelse(all.ext.counts5$counts == 0,0,ext.counts5$counts/all.ext.counts5$counts)
+prop.CC.exts10 <- ifelse(all.ext.counts10$counts == 0,0,ext.counts10$counts/all.ext.counts10$counts)
+
+CC.ext.years <- data.frame(CC.ext.years = as.numeric(CC.ext.contera$yearLastSeen2),
+                           id = rank(as.numeric(CC.ext.contera$yearLastSeen2), ties.method = 'first'))
+
+all.ext.years <- data.frame(all.ext.years = as.numeric(all.ext.sub$yearLastSeen2))
+nonCC.ext.years <- data.frame(nonCC.ext.years = CC.ext.contera$yearLastSeen2 %in% all.ext.sub$yearLastSeen2)
+
+prop.CC.ext10.df <- data.frame(Year = seq(Year.threshold + 5,2015,10),
+  prop.CC.exts10 = prop.CC.exts10[1:6], 
+  CC.ext = ext.counts10$counts[1:6],
+  all.ext = all.ext.counts10$counts[1:6],
+  Ind = factor(seq(1,6,)))
+
+cat("average proportion extinction risk from climate change = ",mean(prop.CC.ext10.df[,2]))
+
+mod <- stan_glmer(cbind(CC.ext,all.ext) ~ scale(Year) + (1|Ind), family = "binomial", data = prop.CC.ext10.df, chains = 3, iter = 10000)
+msum <- data.frame(summary(mod, digits = 4, prob=c(.025, .5, .975)))
+msum
+invlogit(as.numeric(msum[2,]))
+
+```
+
+## Make plots
+<br>
+<br>
+```{r, plots}
+Fig4a <- ggplot(data = prop.CC.ext10.df) +
+  geom_point(aes(x = Year, y = prop.CC.exts10),color = "#e98a15", fill = "#e98a15", shape = 23, size = 3) +
+   theme(axis.title=element_text(size=12), axis.text.x = element_text(size = 10),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_rect(fill = "white")) +
+    scale_x_continuous(NULL, limits = c(Year.threshold, 2023), breaks = seq(Year.threshold,2023,5)) +
+  scale_y_continuous(name = "Decadal proportion of \n climate extinctions", limits = c(0,.21),breaks = seq(0,.21,.05)) 
+Fig4a
+
+Fig4b <- ggplot() +    
+  geom_dotplot(data = all.ext.years, aes(x=all.ext.years),binwidth = 1, fill = "#58507A", color = "#58507A", method = "histodot") +  
+  geom_dotplot(data = CC.ext.years, aes(x=CC.ext.years),binwidth = 1, color = "#e98a15", fill = "#e98a15", method = "histodot") +
+  theme(axis.title=element_text(size=12), axis.text.x = element_text(size = 10),axis.text.y = element_text(color = "white"),
+        axis.ticks.y = element_line(color = "white"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_rect(fill = "white")) +
+  scale_y_continuous(name = "Extinctions \n ") +
+  scale_x_continuous(NULL, limits = c(Year.threshold, 2023),breaks = seq(Year.threshold,2023,5)) +
+  guides(size=F) #+ theme_classic() 
+Fig4b
+
+Fig4c <- ggplot() +  
+  geom_area(data = global.temps.sub, aes(x = Year, y = Anomaly.C), fill = "#e98a15") +
+  ylab("Pre-industrial \n Temperature Rise (C)") + ylim(0,1.5) +
+  scale_x_continuous(NULL, limits = c(Year.threshold, 2023),breaks = seq(Year.threshold,2023,5)) +
+  theme(axis.title.y=element_text(size=12), axis.title.x=element_blank(), axis.text.x = element_text(size=10),
+        legend.position = "none",panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_rect(fill = "white"))#+
+Fig4c
+
+ggarrange(Fig4a, NULL, Fig4b, NULL, Fig4c, nrow=5, heights = c(4, 0.05, 4, 0.05, 4))
+
+#ggsave("Metarisk2 extinction now.png",width=6,height=7,unit="in",dpi=2400)
+```
+
+
+
+
+
+
+
+
+
+
+
+
