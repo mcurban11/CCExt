@@ -1,0 +1,641 @@
+---
+title: "Extinction risk from climate change: other threats"
+output: word_document
+date: "January 6th, 2024"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE, cache = TRUE) 
+```
+
+## Load libraries and data
+
+```{r load libraries and data, message = FALSE, warning=FALSE}
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+
+ #load libraries
+library(coda); library(ggplot2); library(rstan); library(bayesplot); library(shinystan); library(loo); library(rstanarm); library(dplyr); library(ggpubr)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = FALSE)
+
+#load data
+dataP<-read.table("MetaRisk2 aggthres 5.txt",header=T); attach(dataP)
+
+#other quantities
+#betareg requires no 0s or 1s
+koffset = 0.001 #the k that gives the best posterior predictive check
+percent2 <- adj.percent
+percent2[adj.percent == 0] = koffset;
+percent2[adj.percent == 1] = 1 - koffset;
+dataP$percent2 <- percent2;
+
+data.use<-dataP; attach(data.use)
+
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+```
+
+## Test for overall threat effect
+
+```{r all-threat analysis, cache=TRUE}
+#form matrix of factors
+#create model matrix for coefficients
+betamat <- data.frame(
+  Intercept = rep(1,N),
+  Threatened = ifelse(data.use$Threatened == "Y",1,0),
+  Endemic = ifelse(data.use$Endemic == "Y",1,0),
+  Non.clim.threat = ifelse(data.use$Non.clim.threat == "Y",1,0),
+  Land.Use.Change = ifelse(data.use$Land.Use.Change == "Y",1,0))
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+# mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=5000, cores=3,iter=8000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 15))#
+
+load("3allthreat.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+```{r LOO table, cache = TRUE}
+loo.mod2=loo.mod # rename loo.mod so can load n
+mod2 = mod
+load("2all_interc.rds")
+
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including all threats"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 1: Comparisons of LOOic between baseline and all threats", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+## Test for effect of perceived threat
+
+Here I tested if extinction predictions change based on whether species were considered threatened a priori, if non-climate threats were modeled, and if land use change was modeled through time. I predicted that extinction risks would increase for each of these categories relative to the overall mean.
+
+## Perceived threat
+
+```{r pre-threat analysis}
+#form matrix of factors
+betamat <- model.matrix(~Non.clim.threat, data = data.use) # 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+ # mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+ #           chains = 3, warmup=5000, cores=7,iter=8000,
+ #          init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2threat.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+Species thought to be threatened are more threatened.
+
+```{r LOO table 2}
+loo.mod2=loo.mod # rename loo.mod so can load n
+mod2 = mod
+#load("beta interc only.rds")
+load("2all_interc.rds")
+
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including threat"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 2: Comparisons of LOOic between baseline and threat", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+Some limited support for the model (LOOic is lower).
+
+## Endemicity
+
+Here I tested if extinction predictions change based on whether species endemic or not to the geographic area analyzed in a study. I predicted that extinction risks would increase because endemic species tend to have smaller initial ranges and are more specialized.
+
+```{r endemic analysis}
+#form matrix
+betamat <- model.matrix(~Endemic, data = data.use) # 1 - No, 2 - Some, 3 - Yes
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+# init.beta=rep(0,ncol(betamat)-1)
+# init.fn<- function (chain_id) {
+#   list(beta = c(-2.5,init.beta))
+# }
+
+ # mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+ #           chains = 3, warmup=4000, cores=7,iter=7000,
+ #          init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2endemic.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+```
+
+```{r LOO table 3}
+loo.mod2=loo.mod # rename loo.mod so can load n
+load("2all_interc.rds")
+
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including threat"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 3: Comparisons of LOOic between baseline and threat", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+Some limited support for the model (LOOic is lower).
+
+## Non-climate threat
+
+```{r non-climate threat analysis}
+data.use<-dataP; attach(data.use)
+
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+
+betamat <- model.matrix(~Non.clim.threat, data = data.use) # 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+ # mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+ #           chains = 3, warmup=4000, cores=7,iter=7000,
+ #          init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+
+load("2nc.threat.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+
+#save(mod, loo.mod, file="nc.threat.rds")
+```
+
+No support for non-climate threats as contributing substantially to increasing extinction threat.
+
+```{r LOO table 4, cache = TRUE}
+loo.mod2=loo.mod # rename loo.mod so can load n
+mod2 = mod
+
+load("2all_interc.rds")
+
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including non-climate threat"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 4: Comparisons of LOOic between baseline and non-climate threat", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+No model support for non-climate threat (LOOic is higher).
+
+## Land-use over time
+
+```{r land use analysis, cache=TRUE}
+data.use<-dataP; attach(data.use)
+
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+Studyint<-as.integer(unclass(factor(data.use$Study)))
+phi = data.use$Total.N
+
+betamat <- model.matrix(~Land.Use.Change) 
+
+stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat, phi = phi, S = n.Study, P = ncol(betamat), Study = Studyint)
+params.to.monitor=c("beta","y_rep","stu","sigma_stu", "eta","log_lik")
+
+init.beta=rep(0,ncol(betamat)-1)
+init.fn<- function (chain_id) {
+  list(beta = c(-2.5,init.beta))
+}
+
+ # mod=stan(file="MetaRisk2 RSTAN beta mat.stan",data=stan.data,pars=params.to.monitor,
+ #           chains = 3, warmup=4000, cores=7,iter=7000,
+ #          init = init.fn, control=list(adapt_delta = 0.9, max_treedepth = 15))
+load("2LUchange.rds")
+params.to.monitor2=c("beta")#
+sumx = summary(mod,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#checks
+traceplot(mod,pars=params.to.monitor2,inc_warmup=FALSE)
+
+pp_check(
+  stan.data$percent,
+  rstan::extract(mod, par = 'y_rep')$y_rep[1:100, ], 
+  fun = 'dens_overlay'
+) 
+
+#calculate loo
+# log_lik_1 <- extract_log_lik(mod, merge_chains = FALSE)
+# r_eff <- relative_eff(exp(log_lik_1), cores = 6)
+# loo.mod <- loo(log_lik_1, r_eff = r_eff, cores = 6)
+loo.mod # 
+
+#save(mod, loo.mod, file="LUchange.rds")
+```
+
+```{r LOO table 5}
+loo.mod2=loo.mod # rename loo.mod so can load n
+mod2 = mod
+#load("beta interc only.rds")
+load("2all_interc.rds")
+
+table.data<-data.frame(
+  Model = c("Intercept-only model","Model including future land use change"),
+  LOOic = c(loo.mod$estimates[3],loo.mod2$estimates[3]),
+  SE = c(loo.mod$estimates[6],loo.mod2$estimates[6])
+)
+knitr::kable(table.data, caption = "Table 5: Comparisons of LOOic between baseline and land use change", format = "markdown")
+Looic.diff = loo.mod2$estimates[3] - loo.mod$estimates[3]
+cat("Difference in LOOic =", Looic.diff)
+```
+
+Little model support for land use change affecting extinction risks.
+
+```{r compile individual results}
+n.total <- nrow(data.use)  #total N
+
+#use common median threat
+load("2all_interc.rds")
+posterior2=as.data.frame(mod)
+grand.mean = posterior2[["mu"]]
+grand.mean.pred <- invlogit(quantile(grand.mean, probs = c(0.025, 0.5, 0.975)))
+
+#*****************************************************************************************
+load("2threat.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Threatened == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Threatened == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals <- data.frame(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+
+#*****************************************************************************************
+load("2endemic.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Threatened == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Threatened == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[3]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[2,] <- data.frame(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+
+#*****************************************************************************************
+
+load("2nc.threat.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Non.clim.threat == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Non.clim.threat == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[3,] <- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************
+
+load("2LUchange.rds")
+mod.a <- mod
+posterior <- as.data.frame(mod.a)
+p.y <- sum(data.use$Land.Use.Change == "Y")/n.total #prop of yes
+p.n <- sum(data.use$Land.Use.Change == "N")/n.total #prop of nos
+beta.Y = invlogit(posterior[["beta[1]"]] + posterior[["beta[2]"]])
+beta.N = invlogit(posterior[["beta[1]"]])
+#r.mean.1 = p.n * beta.N + p.y * beta.Y
+r.mean.1 = invlogit(grand.mean)
+beta.vs.r.mean.n = (beta.N) - (r.mean.1)
+beta.vs.r.mean.y = (beta.Y) - (r.mean.1)
+
+param.vals.1 <- data.frame(
+"r.mean.1" = r.mean.1,
+"beta.N" = beta.N,
+"beta.Y" = beta.Y,
+"beta.vs.r.mean.n" = beta.vs.r.mean.n,
+"beta.vs.r.mean.y" = beta.vs.r.mean.y
+)
+pred.1 = (apply(param.vals.1, 2, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+
+threat.vals[4,]<- cbind(overall.mean = pred.1[2,1],
+  beta.N.lo = pred.1[1,2],
+  beta.N = pred.1[2,2],
+  beta.N.hi = pred.1[3,2],
+  beta.Y.lo = pred.1[1,3],
+  beta.Y = pred.1[2,3],
+  beta.Y.hi = pred.1[3,3],   
+  beta.N.mean.lo = pred.1[1,4],
+  beta.N.mean = pred.1[2,4],
+  beta.N.mean.hi = pred.1[3,4],
+  beta.Y.mean.lo = pred.1[1,5],
+  beta.Y.mean = pred.1[2,5],
+  beta.Y.mean.hi = pred.1[3,5]
+)
+#*****************************************************************************************  
+threat.vals$threat = c("Preconceived Threat", "Endemic", "Other Threats","Land use change")
+
+save(threat.vals,file ="2Threat analysis results.rds")
+threat.vals.r <- threat.vals
+threat.vals.r[,1:13] <- round((threat.vals.r[,1:13]), digits = 4)
+knitr::kable(threat.vals.r, caption = "Table 6: Extinction risk by threats and difference from mean, with 95% credible intervals", format = "markdown", font = 5)
+```
+
+```{r Fig 1: Threat, fig.cap = "Fig. 1. Predicted extinction risk based on various threats."}
+#load("Threat analysis results.rds")
+threat.vals$threat <- factor(threat.vals$threat, levels = c("Preconceived Threat", "Endemic","Other Threats", "Land use change"))
+
+#Figures
+Fig2a<-ggplot(data = threat.vals)+
+  geom_vline(xintercept=grand.mean.pred[2]) +
+  geom_errorbar(aes(y = threat, xmin = beta.Y.lo, xmax = beta.Y.hi), width = 0) +
+  geom_point(stat = "identity", aes(y = threat, x = beta.Y), color = "#416788", size = 3, shape = 15) +
+  xlab("Pre-industrial rise \n in temperature (C)") + xlim(c(0,.2)) +
+  theme_classic()+ 
+  theme(axis.title.y = element_blank(),axis.title=element_text(size=14),axis.text = element_text(size=12))+
+  guides(size=F)
+Fig2a
+
+#Differences from zero
+glob.mean.over <- rep("n",nrow(threat.vals))
+glob.mean.over[threat.vals$beta.Y.mean > 0 & threat.vals$beta.Y.mean.lo > 0] = "y"
+glob.mean.over[threat.vals$beta.Y.mean < 0 & threat.vals$beta.Y.mean.hi < 0] = "y"
+threat.vals$glob.mean.over <- glob.mean.over
+
+Fig2b <- ggplot(data = threat.vals)+
+  geom_vline(xintercept=0) +
+  geom_errorbar(aes(y = threat, xmin = beta.Y.mean.lo, xmax = beta.Y.mean.hi), width = 0) +
+  geom_point(stat = "identity", aes(y = threat, x = beta.Y.mean, color = glob.mean.over), size = 3, shape = 15) +
+  scale_color_manual(values=c('grey','#5B507A'))+
+  xlab("Percent difference \n from global mean") + xlim(c(-.12,.12)) +
+  theme_classic()+ 
+  theme(axis.title.y = element_blank(),axis.ticks.y = element_blank(),axis.line.y = element_blank(),axis.text.y = element_blank(),
+        axis.title=element_text(size=14),axis.text = element_text(size=12),legend.position = "none")+
+  guides(size=F) 
+Fig2b
+
+ggarrange(Fig2a, NULL, Fig2b, ncol=3, widths = c(4,.4, 2))
+
+#ggsave("Metarisk2 threats.png",width=8,height=6,unit="in",dpi="print")
+```
+
+```{r sample sizes}
+#catalog sample sizes
+N.pre.st<-length(unique(dataP$Study[dataP$Threatened == "Y"]))
+N.pre.mod<-length((dataP$Study[dataP$Threatened == "Y"]))
+
+N.end.st<-length(unique(dataP$Study[dataP$Endemic == "Y"]))
+N.end.mod<-length((dataP$Study[dataP$Endemic == "Y"]))
+
+N.other.st<-length(unique(dataP$Study[dataP$Non.clim.threat == "Y"]))
+N.other.mod<-length((dataP$Study[dataP$Non.clim.threat == "Y"]))
+
+N.LU.st<-length(unique(dataP$Study[dataP$Land.Use.Change == "Y"]))
+N.LU.mod<-length((dataP$Study[dataP$Land.Use.Change == "Y"]))
+
+table.data<-data.frame(
+  Factor = c("Preconceived","Endemic","Other","Land use change"),
+  Studies = c(N.pre.st,N.end.st, N.other.st,N.LU.st),
+  Models = c(N.pre.mod, N.end.mod, N.other.mod,N.LU.mod)
+)
+knitr::kable(table.data, caption = "Table 7: Number of studies and models for each factor", format = "markdown")
+
+```
+## Conclusion
+
+Studies that focused on species that were considered to be threatened already or were endemic, indeed had higher extinction risks. However, contrary to expectations, models that included non-climate threats (usually land use change) and that modeled future land use changes did not indicate enhanced extinction risks.
+
+## Variation explained
+
+```{r, var explained, warning = FALSE}
+#After Gelman 2019 R2 for Bayesian
+#
+#Load model and beta matrix - check if mu is modeled separately
+load("3allthreat.rds")
+posterior=as.data.frame(mod); 
+betamat <- data.frame(
+  Intercept = rep(1,N),
+  Threatened = ifelse(data.use$Threatened == "Y",1,0),
+  Endemic = ifelse(data.use$Endemic == "Y",1,0),
+  Non.clim.threat = ifelse(data.use$Non.clim.threat == "Y",1,0),
+  Land.Use.Change = ifelse(data.use$Land.Use.Change == "Y",1,0))
+
+#Variables and matrices
+S = 9000; #samples
+K = ncol(betamat); #factors
+p.mat <- as.matrix(posterior[,1:K])
+y = dataP$percent2 
+y.mat = t(matrix(rep(y,S), nrow = N, ncol = S))
+y.mean <- mean(y)
+
+#Calculate y.pred for fixed effects only
+y.pred <- matrix(rep(NA, N*S), nrow = S, ncol = N)
+theta <- y.pred
+for (i in 1:N) {
+      theta[,i] = invlogit(p.mat %*% t(betamat[i,]))#rows = samples, cols = i
+      y.pred[,i] = (theta[,i] * data.use$Total.N[i])/(theta[,i] * data.use$Total.N[i] + (1-theta[,i]) * data.use$Total.N[i])
+}
+
+#Calcluate residual variance
+res.f = y.mat - y.pred    
+RSS.f = rowSums((res.f)^2)
+res.v.f = 1/(N -1) * RSS.f
+
+#Calculate fit variance
+pred.v.f = 1/(N-1) * rowSums((y.pred)^2)
+
+#Calculate R2
+R2.v.f = pred.v.f/(pred.v.f + res.v.f)
+cat("fixed effects R2 = ", quantile(R2.v.f,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+#Total model With random effects
+y.pred.c <-(as.matrix(posterior[,(K+1):(N+K)])) #calculated in STAN, with all RE and weightings
+
+#Calculate residual variance
+res.c = y.mat - y.pred.c    
+RSS.c = rowSums((res.c)^2)
+res.v.c = 1/(N-1) * RSS.c
+
+#Calculate fit variance
+
+pred.v.c = 1/(N-1) * rowSums(y.pred.c^2)
+
+#Calculate full model R2
+R2.v.c = pred.v.c/(pred.v.c + res.v.c)
+print("                                                   ")
+cat("Overall model R2 = ", quantile(R2.v.c,probs = c(0.025, 0.5, 0.975),na.rm = T))
+
+```
