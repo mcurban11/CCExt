@@ -1,0 +1,325 @@
+---
+title: "Factor-weighted estimate of extinction risk from climate change"
+output: word_document
+date: "March 25, 2024"
+---
+## Load libraries and data
+
+```{r, libraries and data,  message = F}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE, cache = TRUE) 
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+library(MCMCglmm); library(coda); library(ggplot2); library(rstan); library(bayesplot); library(shinystan); library(loo); library(rstanarm);
+
+dataP<-read.table("Metarisk2 aggthres 5.txt",header=T); #newest data 
+dataP2<-dataP[is.finite(dataP$Pre.Ind.Rise),]; attach(dataP2) # need to eliminate NA s for pre-industrial rise or stat programs crash
+
+#Bayesian stan model proportional and weighted
+#betareg requires no 0s or 1s
+koffset = 0.001 #the k that gives the best posterior predictive check
+percent2 <- adj.percent
+percent2[adj.percent == 0] = koffset;
+percent2[adj.percent == 1] = 1 - koffset;
+dataP2$percent2 <- percent2;
+
+data.use<-dataP2
+
+#other quantities
+P.Ind<-seq(from = 0, to = 5.5,by = .1) #prediction interval and frequency
+P.Ind2<-seq(from = 0, to = 5.5,by = .01) #prediction interval and frequency needed for Fig 1b
+N = length(data.use$percent2)
+n.Study <- length(unique(data.use$Study)) #number of studies
+betamat <- (model.matrix(~Pre.Ind.Rise:Region,data=data.use)) 
+```
+
+## Load analyses
+
+```{r load baseline}
+#load baseline overall analysis
+load("2pre_lowb.rds") #baseline
+base<-mod;
+
+#Calculate estimates; note original is 1 in matrix
+posteriorb=as.data.frame(base);
+mu.b<-posteriorb[["mu"]]
+beta.b1<-posteriorb[["beta"]]
+params.to.monitor2=c("mu","beta")#
+sumx = summary(base,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+```
+### Load continent analysis
+
+```{r continent analysis}
+# dataP<-read.table("MetaRisk2 aggthres 5.txt",header=T); 
+# dataP2<-dataP[is.finite(dataP$Pre.Ind.Rise),]; attach(dataP2) # need to eliminate NA s for pre-industrial rise or stat programs crash
+# 
+# #betareg requires no 0s or 1s
+# koffset = 0.001 #the k that gives the best posterior predictive check
+# percent2 <- adj.percent
+# percent2[adj.percent == 0] = koffset;
+# percent2[adj.percent == 1] = 1 - koffset;
+# dataP2$percent2 <- percent2;
+# 
+# data.use<-dataP2
+# 
+# N = length(data.use$percent2)
+# n.Study <- length(unique(data.use$Study)) #number of studies
+# Studyint<-as.integer(unclass(factor(data.use$Study)))
+# phi = data.use$Total.N
+# 
+# #create model matrix for coefficients
+# betamat <- (model.matrix(~Pre.Ind.Rise:Region,data=data.use)) 
+# betamat.noint <- betamat[,2:ncol(betamat)]  #remove intercept and model separately
+# stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat.noint, phi = phi, S = n.Study, P = ncol(betamat.noint), Study = Studyint)
+# 
+# params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+# 
+# init.fn<- function (chain_id) {
+#   list(beta = c(-5, rep(0.5,ncol(betamat))))
+# }
+
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=18000, cores=3,iter=21000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 20))#
+
+
+#load continent analysis
+load("2geog_pre.rds") 
+cont<-mod;
+posterior=as.data.frame(cont);
+cats <- c("Africa", "Asia", "New Zealand/Australia", "Europe", "North America", "South America")
+
+params.to.monitor2=c("beta")#params.to.monitor2=c("mu","beta")#
+sumx = summary(cont,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+```
+
+```{r continent richness}
+#Calculate estimates; note original is 1 in matrix
+mu<-posterior[["mu"]]
+beta.1<-posterior[["beta[1]"]]
+beta.2<-posterior[["beta[2]"]]
+beta.3<-posterior[["beta[3]"]]
+beta.4<-posterior[["beta[4]"]]
+#beta.5<-posterior[["beta[5]"]] #oceans not treated  here
+beta.6<-posterior[["beta[6]"]]
+beta.7<-posterior[["beta[7]"]] #no beta 8 which is world (mixed)
+
+beta.cat<-cbind(beta.1,beta.2,beta.3,beta.4,beta.6,beta.7)
+```
+
+### Perform weighting
+
+```{r Continent Weighting}
+#Preliminary weighting based on trees (Gatti el. 2022, using observed https://www.pnas.org/doi/epdf/10.1073/pnas.2115329119)
+tree.rich <- c(10441,7035,6680,7035,8646,27186) #modeled eurasia so split species evenly between Asia and Europe; used n species from Oceania for Australia/New Zealand
+vert.rich <- c(4646 ,6597,1973,550, 4085,5620)#amphibians, mammals, reptiles from IUCN ranges
+# africa	asia	australia	oceania	south_america	europe	north_america
+# 1132	1603	222	73	2369	94	1180
+# 1364	1926	271	113	1202	260	923
+# 2150	3068	961	333	2049	196	1982
+# 4646	6597	1454	519	5620	550	4085
+cont.rich = tree.rich + vert.rich;
+rel.rich <- cont.rich/sum(cont.rich);
+rel.cont.richm = matrix(rep(rel.rich,9000), nrow = 9000, byrow = T)
+
+cont.rich.db <- data.frame(
+  Continents = cats,
+  Total.Rich = cont.rich,
+  Rel.Rich = rel.rich
+)
+
+knitr::kable(cont.rich.db, caption = "Table 1: Continental richness", format = "markdown", font = 8)
+
+beta.cont = beta.cat * rel.cont.richm #weighted betas
+beta.cont.w = rowSums(beta.cont) #sum to get weighted coefficient (works because all relative to 1)
+
+diff.betas <- quantile(invlogit(beta.cont.w) - invlogit(beta.b1), probs = c(0.025, 0.5, 0.975))
+diff.mus <- quantile(invlogit(mu) - invlogit(mu.b), probs = c(0.025, 0.5, 0.975))
+cat("Difference in betas =",diff.betas)
+print("")
+cat("Difference in intercepts =", diff.mus)
+```
+## Results
+The model weighted by continental richness was characterized by a larger slope and smaller intercept.
+
+```{r, estimates}
+#Calculate estimates
+pred.reg = sapply(1:length(mu.b), FUN = function(x) {mu.b[x] + beta.b1[x]*P.Ind}) #mu[x]
+pred.reg.quant = invlogit(apply(pred.reg, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df <- data.frame(x = P.Ind,
+                          mean_line = pred.reg.quant[2,],
+                          low_line = pred.reg.quant[1,],
+                          hi_line = pred.reg.quant[3,])
+
+pred.regw = sapply(1:length(beta.1), FUN = function(x) {mu[x] + beta.cont.w[x]*P.Ind}) #mu[x]
+pred.reg.quantw = invlogit(apply(pred.regw, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_linew = pred.reg.quantw[2,]
+pred.reg.df$low_linew = pred.reg.quantw[1,]
+pred.reg.df$hi_linew = pred.reg.quantw[3,]
+
+#----finer data ------#
+pred.reg2 = sapply(1:length(mu.b), FUN = function(x) {mu.b[x] + beta.b1[x]*P.Ind2}) #mu[x]
+pred.reg.quant2 = invlogit(apply(pred.reg2, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df2 <- data.frame(x = P.Ind2,
+                          mean_line = pred.reg.quant2[2,],
+                          low_line = pred.reg.quant2[1,],
+                          hi_line = pred.reg.quant2[3,])
+
+ 
+pred.regw2 = sapply(1:length(beta.1), FUN = function(x) {mu[x] + beta.cont.w[x]*P.Ind2}) #mu[x]
+pred.reg.quantw2 = invlogit(apply(pred.regw2, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df2$mean_linew = pred.reg.quantw2[2,]
+pred.reg.df2$low_linew = pred.reg.quantw2[1,]
+pred.reg.df2$hi_linew = pred.reg.quantw2[3,]
+```
+
+```{r Fig 1, continent diversity, warning = F}
+
+Fig1<-ggplot(data = pred.reg.df)+
+  geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_line,ymax=hi_line),alpha=.2,fill="darkred") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_line),size=3,color="darkred") +
+    geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_linew,ymax=hi_linew),alpha=.2,fill="#416788") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_linew),size=3,color="#416788") +
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk") +
+  theme_classic() + scale_x_continuous(breaks = seq(0,5,1), limits = c(0,5.5)) + scale_y_continuous(breaks = seq(0,.45,0.05), limits = c(0,.45)) +
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig1
+
+#ggsave("Fig contwtd preind.png",width=8,height=6,unit="in",dpi="print")
+```
+### Despite differences in intercepts and slopes, the two estimates overlap acros the range of values and 95% credible intervals incorporate the alternative estimate. The bias-corrected estimate has larger credible intervals, likely reflecting the higher uncertainties in more diverse regions such as South America.
+
+## Now look at taxonomic richness
+
+```{r taxonomic richness}
+# #create model matrix for coefficients
+# betamat <- (model.matrix(~Pre.Ind.Rise:Taxa,data=data.use)) 
+# betamat.noint <- betamat[,2:ncol(betamat)]  #remove intercept and model separately
+# stan.data<-list(N = N, percent = data.use$percent2, betamat = betamat.noint, phi = phi, S = n.Study, P = ncol(betamat.noint), Study = Studyint)
+# 
+# params.to.monitor=c("mu","beta","y_rep","stu","sigma_stu", "eta","log_lik")
+# 
+# init.fn<- function (chain_id) {
+#   list(beta = c(-5, rep(0.5,ncol(betamat))))
+# }
+# 
+# mod=stan(file="MetaRisk2 RSTAN quad.stan",data=stan.data,pars=params.to.monitor,
+#           chains = 3, warmup=18000, cores=3,iter=21000,
+#          init = init.fn, save_warmup = FALSE, control=list(adapt_delta = 0.9, max_treedepth = 20))#
+# save(mod, loo.mod, file="2taxa_pre.rds")
+#load taxa analysis
+load("2taxa_pre2.rds") 
+tax<-mod;
+tposterior=as.data.frame(tax);
+tcats <- c("Amphibians", "Birds", "Fish", "Insects", "Invertebrates", "Mammals", "Plants", "Reptiles")
+
+params.to.monitor2=c("mu","beta")#
+sumx = summary(tax,probs=c(.025,0.975), digits=4, pars=params.to.monitor2) 
+sumx$summary
+
+#Calculate estimates; note original is 1 in matrix
+tmu<-tposterior[["mu"]]
+tbeta.1<-tposterior[["beta[1]"]] #amphibs
+tbeta.2<-tposterior[["beta[2]"]] #Birds
+tbeta.3<-tposterior[["beta[3]"]] #Fish
+tbeta.4<-tposterior[["beta[4]"]] #Insects
+tbeta.5<-tposterior[["beta[5]"]] #Inverts
+tbeta.6<-tposterior[["beta[6]"]] #Mammals
+tbeta.7<-tposterior[["beta[7]"]] #Mixed
+tbeta.8<-tposterior[["beta[8]"]] #Plants
+tbeta.9<-tposterior[["beta[9]"]] #Reptiles
+
+tbeta.cat<-cbind(tbeta.1,tbeta.2,tbeta.3,tbeta.4,tbeta.5,tbeta.6,tbeta.8,tbeta.9) # missing tbeta.7 = mixed taxa, not informative
+```
+
+```{r taxonomic Weighting}
+#         "Amphibians", "Birds", "Fish", "Insects", "Invertebrates", "Mammals", "Plants", "Reptiles"
+taxa.rich <- c(6515,9990,31269,1000000,359365,5487,297857,8734)
+rel.taxa.rich <- taxa.rich/sum(taxa.rich);
+rel.taxa.richm = matrix(rep(rel.taxa.rich,9000), nrow = 9000, byrow = T)
+
+taxa.rich.db <- data.frame(
+  taxa = tcats,
+  Total.Rich = taxa.rich,
+  Rel.Rich = rel.taxa.rich
+)
+
+knitr::kable(taxa.rich.db, caption = "Table 2: Taxa richness", format = "markdown", font = 8)
+
+beta.tax = tbeta.cat * rel.taxa.richm  #weighted betas
+beta.tax.w = rowSums(beta.tax) #sum to get weighted coefficient (works because all relative to 1)
+
+diff.tbetas <- quantile(invlogit(beta.tax.w) - invlogit(beta.b1), probs = c(0.025, 0.5, 0.975))
+diff.tmus <- quantile(invlogit(tmu) - invlogit(mu.b), probs = c(0.025, 0.5, 0.975))
+cat("Taxa: Difference in betas =",diff.tbetas)
+print(",")
+cat("Taxa: Difference in intercepts =", diff.tmus)
+```
+
+## Results
+Again, the weighted estimate has higher beta but lower intercept.
+
+```{r, taxa estimates}
+tpred.regw = sapply(1:length(tbeta.1), FUN = function(x) {tmu[x] + beta.tax.w[x]*P.Ind}) #mu[x]
+tpred.reg.quantw = invlogit(apply(tpred.regw, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_linet = tpred.reg.quantw[2,]
+pred.reg.df$low_linet = tpred.reg.quantw[1,]
+pred.reg.df$hi_linet = tpred.reg.quantw[3,]
+
+tpred.regw2 = sapply(1:length(tbeta.1), FUN = function(x) {tmu[x] + beta.tax.w[x]*P.Ind2}) #mu[x]
+tpred.reg.quantw2 = invlogit(apply(tpred.regw2, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df2$mean_linet = tpred.reg.quantw2[2,]
+pred.reg.df2$low_linet = tpred.reg.quantw2[1,]
+pred.reg.df2$hi_linet = tpred.reg.quantw2[3,]
+```
+
+```{r Fig 2, taxa diversity}
+Fig2<-ggplot(data = pred.reg.df)+
+  geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_line,ymax=hi_line),alpha=.2,fill="darkred") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_line),size=3,color="darkred") +
+    geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_linet,ymax=hi_linet),alpha=.2,fill="#416788") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_linet),size=3,color="#416788") +
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk") +
+  theme_classic() + scale_x_continuous(breaks = seq(0,5,1), limits = c(0,5.5)) + scale_y_continuous(breaks = seq(0,.45,0.05), limits = c(0,.45)) +
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig2
+
+#ggsave("Fig taxawtd preind.png",width=8,height=6,unit="in",dpi="print")
+```
+
+## Combine the two estimates into ensemble
+
+```{r, combine estimates}
+#Combine both estimates
+tg.predw <- cbind(pred.regw,tpred.regw)
+tg.reg.quantw = invlogit(apply(tg.predw, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df$mean_linetg = tg.reg.quantw[2,]
+pred.reg.df$low_linetg = tg.reg.quantw[1,]
+pred.reg.df$hi_linetg = tg.reg.quantw[3,]
+
+tg.predw2 <- cbind(pred.regw2,tpred.regw2)
+tg.reg.quantw2 = invlogit(apply(tg.predw2, 1, quantile, probs = c(0.025, 0.5, 0.975),na.rm=TRUE))
+pred.reg.df2$mean_linetg = tg.reg.quantw2[2,]
+pred.reg.df2$low_linetg = tg.reg.quantw2[1,]
+pred.reg.df2$hi_linetg = tg.reg.quantw2[3,]
+
+#save(pred.reg.df,pred.reg.df2,file = "preind Weighted estimate.rds")
+```
+
+```{r Fig 3, both weighted analyses}
+Fig3<-ggplot(data = pred.reg.df)+
+  geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_line,ymax=hi_line),alpha=.2,fill="darkred") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_line),size=3,color="darkred") +
+    geom_ribbon(data = pred.reg.df, aes(x=P.Ind,ymin=low_linetg,ymax=hi_linetg),alpha=.2,fill="#416788") +
+  geom_line(data = pred.reg.df, aes(x=P.Ind,y=mean_linetg),size=3,color="#416788") +
+  xlab("Pre-industrial rise in temperature (C)") + ylab("Predicted extinction risk") +
+  theme_classic() + scale_x_continuous(breaks = seq(0,5,1), limits = c(0,5.5)) + scale_y_continuous(breaks = seq(0,.45,0.05), limits = c(0,.45)) +
+  theme(axis.title=element_text(size=18),title=element_text(size=20),axis.text = element_text(size=16))+
+  guides(size=F)
+Fig3
+
+#ggsave("Fig bothwtd preind.png",width=8,height=6,unit="in",dpi="print")
+```
