@@ -1,0 +1,1105 @@
+---
+title: "Extinction risk from climate change: factor interactions"
+output: word_document
+date: "June 4th, 2024"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache.lazy = FALSE, cache = TRUE) 
+```
+
+# Load libraries and data
+```{r load libraries and data, message = FALSE}
+
+rm(list = ls())
+ root.dir = "C:/Users/mcu08001/Documents/1New Research/CC MetaRisk2/Analysis"
+
+ # load libraries
+library(coda); library(ggplot2); library(dplyr); library(ggpubr); library(tidytext); 
+
+ # load data
+data<-read.table("MetaRisk2 aggthres 5.txt",header=T); 
+ 
+# Combine CCVA and Expert because expert has very few studies and is similar to CCVA
+data$Model.Type[data$Model.Type == "Expert"] = "Expert.CCVA" 
+data$Model.Type[data$Model.Type == "CCVA"] = "Expert.CCVA"
+
+ # List of all study names
+study.names <- unique(data$Study)
+```
+# Functions
+<br>
+```{r function for calculating factors, cache=TRUE}
+# create function to sample full dataset n times without replacement
+factor.n <- function(data) {
+
+  # Calculate factors of interest - removed those that are not different from median
+  factor.p <- data.frame("Asia" = length(unique(data$Study[data$Region == "Asia"])))
+  factor.p$AustraliaNewZealand <- length(unique(data$Study[data$Region == "AustraliaNewZealand"]))
+  factor.p$SouthAmerica <- length(unique(data$Study[data$Region == "Samerica"]))
+  factor.p$Amphibians <- length(unique(data$Study[data$Taxa == "Amphibians"]))
+  factor.p$Birds <- length(unique(data$Study[data$Taxa == "Birds"]))
+  factor.p$NorthTemperate <- length(unique(data$Study[data$N.Middle == "Y"]))
+  factor.p$Arctic <- length(unique(data$Study[data$Arctic == "Y"]))
+  factor.p$Mountain <- length(unique(data$Study[data$Mtn == "Y"]))
+  factor.p$Freshwater <- length(unique(data$Study[data$Fresh == "Y"])) 
+  factor.p$Island <- length(unique(data$Study[data$Island == "Y"]))
+  factor.p$Threatened <- length(unique(data$Study[data$Threatened == "Y"])) 
+  factor.p$Endemic <- length(unique(data$Study[data$Endemic == "Y"]))
+  factor.p$Expert.CCVA <- length(unique(data$Study[data$Model.Type == "Expert.CCVA"]))
+  factor.p$Mechanistic <- length(unique(data$Study[data$Model.Type == "Mechanistic"])) 
+  factor.p$SAR <- length(unique(data$Study[data$Model.Type == "SAR"]))
+  factor.p$SpeciesInteractions <- length(unique(data$Study[data$Sp.int == "Y"]))
+  factor.p$Demography <- length(unique(data$Study[data$Demography.LH == "Y"]))  
+  factor.p$None <- length(unique(data$Study[data$Disp.Mod == "None"])) 
+  factor.p$Universal <- length(unique(data$Study[data$Disp.Mod == "Universal"])) 
+  factor.p$TemperatureRise <- mean(data$Pre.Ind.Rise, na.rm = T)
+   
+ return(factor.p)
+ #return(data.sub)
+}
+
+```
+# Test interactions
+<br>
+```{r function for drawing samples, cache=TRUE}
+# create function to sample full dataset n times without replacement
+sample.studies <- function(data, n.s, t) {
+
+  # Initialize a list to store the sampled data frames
+  sampled_data_list <- data.frame(matrix(NA, nrow = t, ncol = 20))
+
+    for (i in 1:t) {
+    # Sample n unique values without replacement    sampled.values <- sample(study.names, 5)
+    sampled.values <- sample(study.names,n.s)
+    # Filter the original data frame to include only rows with the sampled unique values
+    sampled.data <- data[data[["Study"]] %in% sampled.values, ]
+    # Sample using factor.n function for all factors of interest
+    factor.sample <- factor.n(sampled.data)
+    #Add to list
+    sampled_data_list[i,] <- factor.sample
+  }
+  
+ return(sampled_data_list)
+}
+
+```
+# Test Amphibians
+<br>
+```{r amphibians, cache=TRUE}
+# Subset data
+data.sub <- data[data$Taxa == "Amphibians",]
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 2 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Amphibians" & res_transposed$Factors != "Birds",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on amphibian risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Amphibian factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Birds
+<br>
+```{r birds, cache=TRUE}
+# Subset data
+data.sub <- data[data$Taxa == "Birds",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 2 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Amphibians" & res_transposed$Factors != "Birds",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on bird risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Bird factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Asia
+<br>
+```{r Asia, cache=TRUE}
+#subset data
+data.sub <- data[data$Region == "Asia",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 3 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Asia" & res_transposed$Factors != "AustraliaNewZealand" & res_transposed$Factors != "SouthAmerica",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Asian risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Asia factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Australia New Zealand
+<br>
+```{r ozzie, cache=TRUE}
+#subset data
+data.sub <- data[data$Region == "AustraliaNewZealand",] #change
+
+# Considered Auatralia and New Zealand as islands for main analysis
+data.sub$Island[data.sub$Region == "AustraliaNewZealand"] = "Y"
+
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 6 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Asia" & res_transposed$Factors != "AustraliaNewZealand" & res_transposed$Factors != "SouthAmerica" & res_transposed$Factors != "Arctic" & 
+                                   res_transposed$Factors != "NorthTemperate"& 
+                                   res_transposed$Factors != "Island",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Australia/NZ risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("AusNZ factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test South America
+<br>
+
+```{r SA, cache=TRUE}
+#subset data
+data.sub <- data[data$Region == "Samerica",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 5 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Asia" & res_transposed$Factors != "AustraliaNewZealand" & res_transposed$Factors != "SouthAmerica" & res_transposed$Factors != "Arctic" & 
+                                   res_transposed$Factors != "NorthTemperate",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on South American risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Samerica factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test North temperate
+<br>
+```{r N temperate, cache=TRUE}
+#subset data
+data.sub <- data[data$N.Middle == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 5 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "NorthTemperate" & res_transposed$Factors != "Arctic" & res_transposed$Factors != "SouthAmerica" & res_transposed$Factors != "AustraliaNewZealand" & res_transposed$Factors != "Asia",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on North Temperate risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("N Temp factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Arctic
+<br>
+```{r Arctic, cache=TRUE}
+#subset data
+data.sub <- data[data$Arctic == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 5 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "NorthTemperate" & res_transposed$Factors != "Arctic" & res_transposed$Factors != "SouthAmerica" & res_transposed$Factors != "AustraliaNewZealand" & res_transposed$Factors != "Asia",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Arctic risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Arctic factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Mtn
+<br>
+```{r mtn, cache=TRUE}
+#subset data
+data.sub <- data[data$Mtn == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Mountain",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Mountain risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Mountain factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Freshwater
+<br>
+```{r fresh, cache=TRUE}
+#subset data
+data.sub <- data[data$Fresh == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Freshwater",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Freshwater risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Freshwater factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Island
+<br>
+
+```{r island, cache=TRUE}
+#subset data
+data.sub <- data[data$Island == "Y" | data$Region == "AustraliaNewZealand",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 2 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Island" & res_transposed$Factors != "AustraliaNewZealand",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies on Island risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Island factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Threatened
+<br>
+```{r threat, cache=TRUE}
+#subset data
+data.sub <- data[data$Threatened == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Threatened",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies with pre-existing threats") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Threat factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Endemic
+<br>
+```{r endemic, cache=TRUE}
+#subset data
+data.sub <- data[data$Endemic == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Endemic",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies for Endemic species risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Endemic factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test CCVA
+<br>
+```{r ccva, cache=TRUE}
+#subset data
+data.sub <- data[data$Model.Type == "Expert.CCVA",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 4 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Expert.CCVA" & res_transposed$Factors != "Expert" & res_transposed$Factors != "Mechanistic" & 
+                                   res_transposed$Factors != "SAR",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies for Expert/CCVA models") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Expert CCVA factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test Mechanistic models
+<br>
+```{r mechanistic, cache=TRUE}
+#subset data
+data.sub <- data[data$Model.Type == "Mechanistic",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 4 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Expert.CCVA" & res_transposed$Factors != "Expert" & res_transposed$Factors != "Mechanistic" & 
+                                   res_transposed$Factors != "SAR",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies for Mechanistic model risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Mechanistic factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test SAR models
+<br>
+```{r SAR, cache=TRUE}
+#subset data
+data.sub <- data[data$Model.Type == "SAR",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 4 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Expert.CCVA" & res_transposed$Factors != "Expert" & res_transposed$Factors != "Mechanistic" & 
+                                   res_transposed$Factors != "SAR",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies for SAR model risk") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("SAR factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test models with species interactions
+<br>
+```{r sp int, cache=TRUE}
+#subset data
+data.sub <- data[data$Sp.int == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "SpeciesInteractions",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, linewidth = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies with species interactions") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Sp int factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test models with demography
+<br>
+```{r demog, cache=TRUE}
+#subset data
+data.sub <- data[data$Demography.LH == "Y",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 1 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Demography",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies with demography") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("Demog factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test models with no dispersal
+<br>
+```{r nodisp, cache=TRUE}
+#subset data
+data.sub <- data[data$Disp.Mod == "None",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 2 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "None" & res_transposed$Factors != "Universal",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies with no dispersal") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("No disp factors.png",width=7,height=9,unit="in",dpi=1200)
+```
+# Test models with universal dispersal
+<br>
+```{r uni disp, cache=TRUE}
+#subset data
+data.sub <- data[data$Disp.Mod == "Universal",] #change
+n.fact <- length(unique(data.sub$Study))
+
+#Calculate factors for observed data
+Obs.factor <- factor.n(data.sub)/n.fact
+Obs.factor$TemperatureRise <- Obs.factor$TemperatureRise * n.fact/10 #correct this - pre ind rise should not be divided by n
+
+# Obtain samples for comparison
+Rand.factor <- sample.studies(data,n.fact,10000)/n.fact
+
+# Add colnames
+colnames(Rand.factor) <- colnames(Obs.factor)
+
+#correct this - pre ind rise should not be divided by n, divide by 10 so can see on graph
+Rand.factor$TemperatureRise <- Rand.factor$TemperatureRise * n.fact/10 
+
+#Need to apply correction for multiple tests, Bonferroni = alpha/s tests = 0.05/21 = .0024, so CIs are 
+N.tests = 20 - 2 #number of multiple comparisons
+L.CI = .05/N.tests
+U.CI = 1 - L.CI
+
+Obs.factor[2:6,] <- apply(Rand.factor, 2, function(col) quantile(col, c(L.CI, .1, 0.5, 0.9, U.CI), na.rm = TRUE))
+
+# Transpose the data frame
+res_transposed <- as.data.frame(t(Obs.factor))
+res_transposed <- cbind(Factors = rownames(res_transposed), res_transposed)
+rownames(res_transposed) <- NULL
+colnames(res_transposed) <- c("Factors", "obs", "LCI", "x.1","x.5","x.9","UCI")
+res_transposed$Factors = factor(res_transposed$Factors, levels = colnames(Obs.factor))
+res_transposed$Direction <-c("lo","hi","hi","hi","lo","lo","lo","hi","hi","hi","hi","hi","hi","lo","hi","hi","hi","hi","lo",NA)
+
+res_transposed$col <- rep("grey",nrow(res_transposed))
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "lo"] = "#CD5334"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "lo"] = "#416788"
+res_transposed$col[res_transposed$obs < res_transposed$LCI & res_transposed$Direction == "hi"] = "#416788"
+res_transposed$col[res_transposed$obs > res_transposed$UCI & res_transposed$Direction == "hi"] = "#CD5334"
+
+# Eliminate the subject and those that cannot be true (e.g., amphibian studies cannot be also bird studies)
+res_transposed <- res_transposed[res_transposed$Factors != "Universal" & res_transposed$Factors != "None",]
+
+fig <- ggplot(res_transposed) +
+  geom_errorbar(aes(x = x.5, y = Factors, xmin = LCI, xmax = UCI), width = 0, size = 3, color = "#58507A") +
+  geom_point(aes(x = obs, y = Factors),size = 4, shape = 18, color = res_transposed$col) + xlab("") +
+  theme_classic()+ xlim(0,1) + ggtitle("Representation of other factors \nin studies with universal dispersal") +
+  labs(x="Percent representation",y="Factors") + theme(axis.title=element_text(size=16),plot.title = element_text(size = 20),axis.text = element_text(size=16),legend.position = "none") +   scale_y_reordered() 
+fig
+
+ggsave("UNI disp factors.png",width=7,height=9,unit="in",dpi=1200)
+```
