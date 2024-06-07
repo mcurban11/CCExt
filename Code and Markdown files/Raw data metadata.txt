@@ -1,0 +1,42 @@
+Category	Explanation
+Time	Original = included in 2015 study; New = not included in 2015 study
+Author	First author of study = corresponds to Supplemental table information and citation
+Year	Year of publication
+Study	Study id = Author + Year
+Region	"Geographic region = continents, marine, world (more than one region)"
+Taxa	Taxonomic group (Mixed = more than one group and could not be separated; Invertebrates = non-insect invertebrates)
+Fresh	In Freshwater habitat (Y or N)
+Antarctic	In Antarctic latitudes (Y or N)
+S.Middle	In southern temperate latitudes (Y or N)
+Tropics	In tropical latitudes (Y or N)
+N.Middle	In northern temperate latitudes (Y or N)
+Arctic	In Arctic latitudes (Y or N)
+Mtn	"In mountain ecosystems (> 1000 m, Y, N, S = some but not all studies, could not be separated)"
+Island	On islands
+Threatened	Species or ecosystem chosen based on expectations of risk
+Endemic	Range contained within study region
+Model.Type	"Modeling approach (SDM = species distribution model, SAR = Species-area relationship, Expert, CCVA = climate change vulnerability assessment, Hybrid = SDM with mechanism, Mechanistic)"
+Non.clim.threat	Other threats included; mostly land use
+Land.Use.Change	Modeled dynamic land use change
+Dispersal	"Universal = all habitat is available for colonization, Contiguous = all connected/nearby habitat available, Landscape = landscape features affected dispersal, Fixed = fixed dispersal distance, Species-specific = different dispersal by species or taxonomic group, Intermediate = average of universal and no dispersal, None = no dispersal)"
+Sp.int	Models species interactions
+Physiology	Models physiology 
+Adaptation	Models adaptation
+Pop.diff	Models population differences
+Demography.LH	Models demography / life history 
+Earth.Sys	Models Earth systems
+Other	Models other mechanistic processes
+Other.Habitat	Models habitat other than climate
+Disp.Mod	Models species - specific dispersal
+Scenario	Climate change scenario
+Climate.Mod	Climate change model used
+Pre.Ind.Rise	Pre-industrial industrial rise
+Year.Pred	Year predicted
+Total.N	Total number of species
+WtSp	Study weight (= Total.N in the analysis applied)
+version	id to indicate separate versions of study when concatenated factors do not
+concat	concatenated row information to create individual name for each row
+ave.percent	average percent across extinction thresholds
+max.percent	maximum percent across extinction thresholds
+min.percent	minimum percent across extinction thresholds
+adj.percent	adjusted percent across extinction thresholds; used for main analysis where probability = threshold
