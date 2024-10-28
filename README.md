@@ -1,11 +1,11 @@
 # CCExt
 Data and code associated with Climate Change Extinctions project
 
-This data repository goes with the paper entitled, "Climate Change Extinctions," which is under review. All data and code are made available as data files (.txt or .csv), R code  (.R), STAN code (.STAN), and R Markdown documents with code and results (.RMD).
+This data repository goes with the paper entitled, "Climate Change Extinctions." All data and code are made available as data files (.txt or .csv), R code  (.R), STAN code (.STAN), and R Markdown documents with code and results (.RMD).
 
 ## List of datasets:
 Metarisk for aggreg 5.txt - tab-delimited text file of raw data <br>
-Metarisk2 aggthres 5.txt - tab-delimited text file of data aggregated by extinction risk threshold with Aggregate for beta.R <br>
+Metarisk2 aggthres 5.txt - tab-delimited text file of data aggregated by extinction risk threshold for beta.R <br>
 CC IUCN ext risk.csv – IUCN Red List data for all species with a status = “Extinct” or “Extinct in the wild” and Threats = “Climate change and extreme weather.” Downloaded 2/4/24 <br>
 IUCN ext data.csv - IUCN Red List data for all species with a status = “Extinct” or “Extinct in the wild.” Downloaded 2/4/24 <br>
 
