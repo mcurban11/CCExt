@@ -26,6 +26,7 @@ MetaRisk2 mechs.RMD, MetaRisk2-mechs.pdf - Evaluate extinction risk by process, 
 MetaRisk2 Dispersal Mode.RMD, MetaRisk2-Dispersal-Mode.pdf – Evaluate extinction risk by dispersal mode <br>
 Mechs through time figure.RMD,  Mechs-through-figure.pdf – Produce Figure 4: Mechanisms through time <br>
 Observed CC exts.RMD, Observed CC exts.pdf – Merge extinction datasets and create Figure 5 <br>
+Factor interactions.RMD - Evaluate interactions among sets of factors <br>
 
 ## R code:
 Aggregate for beta.R - Used to aggregate individual extinction thresholds for each study iteration into one aggregated estimate.
